@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import {validateGeneration} from '../../../lib/validation.js';
 import { SYSTEM_PROMPT, buildPrompt } from '../../../lib/ai-prompts.js';
 
 export const runtime = 'nodejs';
@@ -34,6 +35,7 @@ export async function POST(req:Request){
     const model=String(body.model||'gpt-5.6-terra');
     const task=String(body.task||'');
     if(!apiKey || apiKey.length<20) return NextResponse.json({ok:false,error:'Informe uma chave da OpenAI válida.'},{status:400});
+    if(task==='googleAds'&&(!Array.isArray(body.input?.selectedKeywords)||body.input.selectedKeywords.length<5||body.input.selectedKeywords.length>8))return NextResponse.json({ok:false,error:'Selecione de 5 a 8 palavras-chave antes de gerar os anúncios.'},{status:400});
     const prompt=buildPrompt(task,body.project||{},body.input||{});
     const response=await fetch('https://api.openai.com/v1/responses',{
       method:'POST',
@@ -48,6 +50,7 @@ export async function POST(req:Request){
     }
     const raw=extractText(data);
     const parsed=parseJSON(raw);
+    validateGeneration(task,parsed);
     return NextResponse.json({ok:true,data:parsed,usage:data?.usage||null,model:data?.model||model,responseId:data?.id||null});
   }catch(error:any){
     return NextResponse.json({ok:false,error:error?.message||'Falha ao executar o motor de IA.'},{status:500});

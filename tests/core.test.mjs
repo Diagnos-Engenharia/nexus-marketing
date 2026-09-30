@@ -9,7 +9,7 @@ test('métricas',()=>{const m=metrics([{spend:100,impressions:1000,clicks:100,le
 test('termos',()=>{assert.equal(classifySearchTerm('curso grátis engenharia'),'negativo');assert.equal(classifySearchTerm('empresa de vistoria sorocaba'),'alta intenção')});
 test('experimento',()=>assert.equal(evaluateExperiment({metric:'cpl',a:50,b:40}).winner,'B'));
 test('versionamento',()=>{const p=projectFactory('X');markArtifact(p,'persona');assert.equal(artifactStatus(p,'persona'),'current');p.niche='Outro';assert.equal(artifactStatus(p,'persona'),'stale')});
-test('health',()=>{const p=projectFactory('X');assert.ok(projectHealth(p).score>=35)});
+test('projeto vazio não recebe prontidão de briefing',()=>{const p=projectFactory('X');assert.equal(p.specialty,'');assert.equal(p.niche,'');assert.equal(projectHealth(p).checks.find(x=>x.key==='business').ok,false)});
 
 test('quality gate A-F',()=>{const p=projectFactory('X');const q=qualityEngine(p);assert.deepEqual(Object.keys(q.gates),['A','B','C','D','E','F']);assert.ok(q.summary.blockers>=1)});
 test('novo workspace não simula performance real',()=>{const p=projectFactory('X');assert.equal(p.performanceRows.length,0)});
