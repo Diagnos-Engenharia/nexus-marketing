@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {calcBudget,parseCSV,normalizeRows,metrics,classifySearchTerm,evaluateExperiment,projectFactory,markArtifact,artifactStatus,projectHealth} from '../lib/core.js';
+import {calcBudget,parseCSV,normalizeRows,metrics,classifySearchTerm,evaluateExperiment,projectFactory,markArtifact,artifactStatus,projectHealth,qualityEngine} from '../lib/core.js';
 
 test('matriz busca/micro',()=>{const x=calcBudget(1500,'busca','micro',50);assert.equal(x.google,1200);assert.equal(x.meta,300);assert.equal(x.gbp,600)});
 test('matriz híbrida/alto',()=>{const x=calcBudget(10000,'hibrido','alto',40);assert.equal(x.google,3500);assert.equal(x.meta,6500);assert.equal(x.gbp,1400)});
@@ -10,3 +10,6 @@ test('termos',()=>{assert.equal(classifySearchTerm('curso grátis engenharia'),'
 test('experimento',()=>assert.equal(evaluateExperiment({metric:'cpl',a:50,b:40}).winner,'B'));
 test('versionamento',()=>{const p=projectFactory('X');markArtifact(p,'persona');assert.equal(artifactStatus(p,'persona'),'current');p.niche='Outro';assert.equal(artifactStatus(p,'persona'),'stale')});
 test('health',()=>{const p=projectFactory('X');assert.ok(projectHealth(p).score>=35)});
+
+test('quality gate A-F',()=>{const p=projectFactory('X');const q=qualityEngine(p);assert.deepEqual(Object.keys(q.gates),['A','B','C','D','E','F']);assert.ok(q.summary.blockers>=1)});
+test('novo workspace não simula performance real',()=>{const p=projectFactory('X');assert.equal(p.performanceRows.length,0)});
