@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="t">
+<title id="t">Nexus Digital</title>
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a4f9f"/><stop offset="1" stop-color="#002e6c"/></linearGradient></defs>
+<rect width="256" height="256" rx="44" fill="#f8fbff"/>
+<path d="M54 170V86l37-22 37 22 37-22 37 22v84l-37 22-37-22-37 22-37-22Zm37-64v43l19 11v-65L91 84l-19 11v65l19 11 18-11-18-11v-43Zm74-22-19 11v65l19 11 19-11V95l-19-11Z" fill="url(#g)"/>
+<circle cx="128" cy="128" r="112" fill="none" stroke="#002e6c" stroke-width="3" opacity=".12"/>
+</svg>
