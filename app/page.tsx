@@ -1,254 +1,197 @@
 'use client';
 
 import Image from 'next/image';
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useState} from 'react';
 import {
-  calcBudget,classifySearchTerm,evaluateExperiment,generatePersona,generateRetina,
-  metrics,normalizeRows,parseCSV,projectFactory
+  ENGINE_LABELS,artifactStatus,calcBudget,evaluateExperiment,localFindings,markArtifact,
+  metrics,normalizeRows,parseCSV,projectFactory,projectHealth
 } from '../lib/core.js';
 
-const NAV=[
-  ['dashboard','Visão geral','▦'],['planner','Planejamento','◎'],['campaign','Campanha guiada','↗'],
-  ['persona','Persona','♙'],['content','Conteúdo RETINA','✦'],['ads','Anúncios','◇'],
-  ['performance','Performance','⌁'],['terms','Termos de pesquisa','⌕'],['experiments','Experimentos A/B','A/B'],
-  ['proposal','Proposta','R$'],['settings','Configurações','⚙']
+type View='home'|'journey'|'prospecting'|'campaigns'|'performance'|'learning'|'settings';
+type AIConfig={apiKey:string;model:string;remember:boolean;connected:boolean;lastTest?:string};
+const BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
+const DEC=new Intl.NumberFormat('pt-BR',{maximumFractionDigits:1});
+const STORAGE='nexus-marketing-ia:v3';
+const SETTINGS='nexus-marketing-settings:v3';
+const SESSION_KEY='nexus-openai-key:session';
+const LOCAL_KEY='nexus-openai-key:local';
+const clone=(x:any)=>JSON.parse(JSON.stringify(x));
+const uid=(p='id')=>`${p}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
+
+const NAV:[View,string,string,string][]=[
+  ['home','Visão geral','⌂','Resumo e próximos passos'],
+  ['journey','Jornada IA','✦','Fluxo guiado dos motores'],
+  ['prospecting','Prospecção','↗','Abordagem, plano e proposta'],
+  ['campaigns','Campanhas','◎','Planejamento, persona, conteúdo e mídia'],
+  ['performance','Performance','⌁','Dados, termos e diagnóstico'],
+  ['learning','Aprendizados','◈','Decisões, testes e auditoria'],
+  ['settings','Configurações','⚙','OpenAI, perfil e dados']
 ];
 
-const BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
-const NUM=new Intl.NumberFormat('pt-BR',{maximumFractionDigits:1});
-const clone=(x:any)=>JSON.parse(JSON.stringify(x));
+const MODEL_OPTIONS=[
+  ['gpt-5.6-luna','Luna · econômico','Alto volume e menor custo'],
+  ['gpt-5.6-terra','Terra · equilibrado','Bom equilíbrio entre qualidade e custo'],
+  ['gpt-5.6-sol','Sol · máxima qualidade','Mais forte para estratégia e raciocínio']
+];
 
-function Card({title,eyebrow,children,action,className=''}:any){
-  return <section className={'card '+className}><div className="cardHead"><div>{eyebrow&&<small>{eyebrow}</small>}{title&&<h3>{title}</h3>}</div>{action}</div>{children}</section>;
-}
-function Pill({children,tone='blue'}:any){return <span className={'pill '+tone}>{children}</span>}
-function Metric({label,value,detail}:any){return <div className="metric"><span>{label}</span><b>{value}</b>{detail&&<small>{detail}</small>}</div>}
-function Field({label,children}:any){return <label className="field"><span>{label}</span>{children}</label>}
+function Card({title,eyebrow,children,action,className=''}:any){return <section className={`card ${className}`}><div className="cardHead"><div>{eyebrow&&<div className="eyebrow">{eyebrow}</div>}{title&&<h3>{title}</h3>}</div>{action}</div>{children}</section>}
+function Pill({children,tone='blue'}:any){return <span className={`pill ${tone}`}>{children}</span>}
+function Field({label,hint,children}:any){return <label className="field"><span>{label}</span>{children}{hint&&<small>{hint}</small>}</label>}
+function Metric({label,value,detail,tone}:any){return <div className={`metric ${tone||''}`}><span>{label}</span><b>{value}</b>{detail&&<small>{detail}</small>}</div>}
+function StatusDot({status}:any){return <span className={`statusDot ${status}`}>{status==='current'?'Atual':status==='stale'?'Desatualizado':'Não gerado'}</span>}
+function Empty({title,text,action}:any){return <div className="empty"><div className="emptyIcon">✦</div><h3>{title}</h3><p>{text}</p>{action}</div>}
+function Tabs({items,value,onChange}:any){return <div className="tabs">{items.map((x:any)=><button key={x[0]} className={value===x[0]?'active':''} onClick={()=>onChange(x[0])}>{x[1]}{x[2]&&<span>{x[2]}</span>}</button>)}</div>}
 
 export default function Home(){
-  const [nav,setNav]=useState('dashboard');
-  const [projects,setProjects]=useState<any[]>([]);
-  const [pid,setPid]=useState('');
-  const [ready,setReady]=useState(false);
-  const [toast,setToast]=useState('');
+  const [view,setView]=useState<View>('home');
+  const [projects,setProjects]=useState<any[]>([]); const [pid,setPid]=useState(''); const [ready,setReady]=useState(false);
+  const [toast,setToast]=useState(''); const [busy,setBusy]=useState<{task:string;label:string;step?:string}|null>(null);
+  const [sub,setSub]=useState<Record<string,string>>({prospecting:'approach',campaigns:'planning',performance:'overview',learning:'decisions'});
+  const [ai,setAI]=useState<AIConfig>({apiKey:'',model:'gpt-5.6-terra',remember:false,connected:false});
+  const [globalSettings,setGlobalSettings]=useState<any>({managerName:'',managerSpecialty:'Gestão de tráfego e estratégia digital',region:'',experience:'',proposalMonthly:1800,proposalSetup:600});
 
   useEffect(()=>{
-    let list:any[]=[];
-    try{list=JSON.parse(localStorage.getItem('nexus-marketing-ia:v2')||'[]')}catch{}
+    let list:any[]=[]; try{list=JSON.parse(localStorage.getItem(STORAGE)||'[]')}catch{}
     if(!list.length) list=[projectFactory('Diagnos Engenharia')];
-    setProjects(list);setPid(list[0].id);setReady(true);
+    let st:any={}; try{st=JSON.parse(localStorage.getItem(SETTINGS)||'{}')}catch{}
+    const remember=!!localStorage.getItem(LOCAL_KEY); const key=localStorage.getItem(LOCAL_KEY)||sessionStorage.getItem(SESSION_KEY)||'';
+    setGlobalSettings((x:any)=>({...x,...st})); setProjects(list); setPid(list[0].id); setAI(x=>({...x,apiKey:key,remember,connected:false})); setReady(true);
   },[]);
-  useEffect(()=>{if(ready)localStorage.setItem('nexus-marketing-ia:v2',JSON.stringify(projects))},[projects,ready]);
-  useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),2400);return()=>clearTimeout(t)},[toast]);
+  useEffect(()=>{if(ready)localStorage.setItem(STORAGE,JSON.stringify(projects))},[projects,ready]);
+  useEffect(()=>{if(ready)localStorage.setItem(SETTINGS,JSON.stringify(globalSettings))},[globalSettings,ready]);
+  useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),2800);return()=>clearTimeout(t)},[toast]);
 
   const p=projects.find(x=>x.id===pid)||projects[0];
-  const update=(fn:(d:any)=>void,msg?:string)=>{
-    setProjects(prev=>prev.map(item=>{
-      if(item.id!==pid)return item;
-      const d=clone(item);fn(d);d.updatedAt=new Date().toISOString();
-      if(msg){d.history=d.history||[];d.history.unshift({at:d.updatedAt,text:msg})}
-      return d;
-    }));
-    if(msg)setToast(msg);
-  };
-  const newWorkspace=()=>{
-    const name=window.prompt('Nome do cliente ou projeto','Novo cliente');
-    if(!name)return;const n=projectFactory(name);setProjects(x=>[...x,n]);setPid(n.id);setNav('dashboard');
-  };
-  if(!ready||!p)return <div className="splash"><Image src="/nexus-logo.svg" width={72} height={72} alt="Nexus"/><b>Carregando Nexus Marketing IA...</b></div>;
+  const update=(fn:(d:any)=>void,msg?:string)=>{setProjects(prev=>prev.map(item=>{if(item.id!==pid)return item;const d=clone(item);fn(d);d.updatedAt=new Date().toISOString();if(msg){d.history=d.history||[];d.history.unshift({at:d.updatedAt,text:msg})}return d}));if(msg)setToast(msg)};
+  const navigate=(v:View,tab?:string)=>{setView(v);if(tab)setSub(s=>({...s,[v]:tab}));window.scrollTo({top:0,behavior:'smooth'})};
+  const createProject=()=>{const name=window.prompt('Nome do novo workspace','Novo cliente');if(!name)return;const n=projectFactory(name);setProjects(prev=>[...prev,n]);setPid(n.id);setView('home');setToast('Workspace criado.')};
+  const saveAIKey=(cfg:AIConfig)=>{localStorage.removeItem(LOCAL_KEY);sessionStorage.removeItem(SESSION_KEY);if(cfg.apiKey){if(cfg.remember)localStorage.setItem(LOCAL_KEY,cfg.apiKey);else sessionStorage.setItem(SESSION_KEY,cfg.apiKey)}setAI(cfg)};
+  const testAI=async(cfg=ai)=>{if(!cfg.apiKey){setToast('Informe a chave da OpenAI.');return false}setBusy({task:'health',label:'Testando conexão com OpenAI'});try{const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:cfg.apiKey,model:cfg.model,task:'health',project:p,reasoning:'low'})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'Falha de conexão');const next={...cfg,connected:true,lastTest:new Date().toISOString()};saveAIKey(next);setToast('OpenAI conectada com sucesso.');return true}catch(e:any){setAI(x=>({...x,connected:false}));setToast(e.message||'Não foi possível conectar.');return false}finally{setBusy(null)}};
 
-  return <div className="shell">
-    <aside>
-      <div className="brand"><Image src="/nexus-logo.svg" width={44} height={44} alt="Nexus Digital"/><div><b>NEXUS</b><span>MARKETING IA</span></div></div>
-      <div className="workspace"><small>WORKSPACE</small><select value={pid} onChange={e=>setPid(e.target.value)}>{projects.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><button onClick={newWorkspace}>＋ Novo workspace</button></div>
-      <nav>{NAV.map(([key,label,icon])=><button key={key} className={nav===key?'active':''} onClick={()=>setNav(key)}><i>{icon}</i>{label}</button>)}</nav>
-      <div className="sideFoot"><span>●</span> ambiente operacional</div>
+  const callAI=async(task:string,project:any,input:any={})=>{if(!ai.apiKey)throw new Error('Conecte sua chave da OpenAI em Configurações.');const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:ai.apiKey,model:ai.model,task,project,input,reasoning:task==='searchTerms'?'low':'medium'})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'Falha ao executar motor');return j};
+  const applyResult=(d:any,task:string,data:any)=>{
+    d.generations=d.generations||[]; d.generations.unshift({id:uid('gen'),task,at:new Date().toISOString(),model:ai.model});
+    if(task==='persona'){if(d.persona){d.personaHistory=d.personaHistory||[];d.personaHistory.unshift({data:d.persona,savedAt:new Date().toISOString()})}d.persona=data;markArtifact(d,'persona')}
+    if(task==='deepDive'){d.persona=d.persona||{};d.persona.exploracao=data}
+    if(task==='content'){if(d.content){d.contentHistory=d.contentHistory||[];d.contentHistory.unshift({data:d.content,savedAt:new Date().toISOString()})}d.content={items:Array.isArray(data)?data:(data.items||[]),generatedAt:new Date().toISOString()};markArtifact(d,'content')}
+    if(task==='metaAds'){if(d.metaAds){d.metaAdsHistory=d.metaAdsHistory||[];d.metaAdsHistory.unshift({data:d.metaAds,savedAt:new Date().toISOString()})}d.metaAds=data;markArtifact(d,'metaAds')}
+    if(task==='googleAds'){if(d.googleAds){d.googleAdsHistory=d.googleAdsHistory||[];d.googleAdsHistory.unshift({data:d.googleAds,savedAt:new Date().toISOString()})}d.googleAds=data;markArtifact(d,'googleAds')}
+    if(task==='approach'){d.approach=data;markArtifact(d,'approach')}
+    if(task==='marketingPlan'){d.marketingPlan=data;markArtifact(d,'marketingPlan')}
+    if(task==='proposal'){d.proposal={...data,status:d.proposal?.status||'Follow UP'};markArtifact(d,'proposal')}
+    if(task==='searchTerms'){d.searchTermClassifications=data}
+    if(task==='optimization'){d.optimization=data;markArtifact(d,'optimization')}
+  };
+  const runEngine=async(task:string,input:any={},success?:string)=>{if(!ai.apiKey){navigate('settings');setToast('Conecte sua chave da OpenAI para ativar este motor.');return}setBusy({task,label:ENGINE_LABELS[task]||'Motor de IA'});try{const snap=clone(p);const j=await callAI(task,snap,input);update(d=>applyResult(d,task,j.data),success||`${ENGINE_LABELS[task]||'Motor'} concluído`);setAI(x=>({...x,connected:true}))}catch(e:any){setToast(e.message||'Falha no motor de IA')}finally{setBusy(null)}};
+  const runEssential=async()=>{if(!ai.apiKey){navigate('settings');setToast('Conecte sua chave da OpenAI antes de executar a jornada.');return}if(!confirm('Executar Persona → RETINA → Meta Ads → Google Ads? Isso fará 4 chamadas à API e substituirá as versões atuais, preservando histórico.'))return;let draft=clone(p);const tasks=['persona','content','metaAds','googleAds'];try{for(let i=0;i<tasks.length;i++){const t=tasks[i];setBusy({task:t,label:'Jornada IA completa',step:`${i+1}/4 · ${ENGINE_LABELS[t]}`});const j=await callAI(t,draft,{});applyResult(draft,t,j.data);draft.history=draft.history||[];draft.history.unshift({at:new Date().toISOString(),text:`${ENGINE_LABELS[t]} gerado pela jornada IA`});setProjects(prev=>prev.map(x=>x.id===pid?clone(draft):x))}setToast('Jornada essencial concluída.')}catch(e:any){setToast(`Jornada interrompida: ${e.message}`)}finally{setBusy(null)}};
+
+  if(!ready||!p)return <div className="splash"><Image src="/nexus-logo.svg" alt="Nexus" width={68} height={68}/><div><b>Nexus Marketing IA</b><span>Organizando seu workspace...</span></div></div>;
+  const health=projectHealth(p);
+
+  return <div className="appShell">
+    <aside className="sidebar">
+      <div className="brand"><Image src="/nexus-logo.svg" alt="Nexus Digital" width={46} height={46}/><div><b>NEXUS</b><span>MARKETING IA</span></div></div>
+      <div className="workspacePicker"><div><small>WORKSPACE ATIVO</small><b>{p.name}</b></div><select value={pid} onChange={e=>setPid(e.target.value)}>{projects.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><button onClick={createProject}>＋ Novo workspace</button></div>
+      <nav>{NAV.map(([key,label,icon,desc])=><button key={key} className={view===key?'active':''} onClick={()=>navigate(key)}><i>{icon}</i><span><b>{label}</b><small>{desc}</small></span>{key==='settings'&&ai.apiKey&&<em className="navDot"/>}</button>)}</nav>
+      <div className="sidebarFoot"><div className="healthMini"><span>Saúde do projeto</span><b>{health.score}%</b></div><div className="progress"><i style={{width:health.score+'%'}}/></div><small>{health.stale.length?`${health.stale.length} item(ns) desatualizado(s)`:'Base consistente'}</small></div>
     </aside>
-    <main>
-      <header><div><small>Nexus Digital / {p.name}</small><h1>{NAV.find(x=>x[0]===nav)?.[1]}</h1></div><div className="headerActions"><Pill tone="green">Sistema ativo</Pill><button className="ghost" onClick={()=>{localStorage.removeItem('nexus-marketing-ia:v2');location.reload()}}>Restaurar demo</button></div></header>
-      <div className="content">
-        {nav==='dashboard'&&<Dashboard p={p} go={setNav}/>}
-        {nav==='planner'&&<Planner p={p} update={update}/>}
-        {nav==='campaign'&&<Campaign p={p} go={setNav}/>}
-        {nav==='persona'&&<Persona p={p} update={update}/>}
-        {nav==='content'&&<Content p={p} update={update}/>}
-        {nav==='ads'&&<Ads p={p} update={update}/>}
-        {nav==='performance'&&<Performance p={p} update={update}/>}
-        {nav==='terms'&&<Terms p={p} update={update}/>}
-        {nav==='experiments'&&<Experiments p={p} update={update}/>}
-        {nav==='proposal'&&<Proposal p={p} update={update}/>}
-        {nav==='settings'&&<Settings p={p} update={update}/>}
+
+    <main className="main">
+      <header className="topbar"><div className="topTitle"><small>Nexus Digital / {p.name}</small><h1>{NAV.find(x=>x[0]===view)?.[1]}</h1></div><div className="topActions"><button className={`aiStatus ${ai.connected?'ok':ai.apiKey?'warn':''}`} onClick={()=>navigate('settings')}><span>✦</span><div><small>OPENAI</small><b>{ai.connected?'Conectada':ai.apiKey?'Chave salva':'Conectar API'}</b></div></button><Pill tone={health.ready?'green':health.score>=50?'amber':'muted'}>{health.ready?'Projeto íntegro':`${health.score}% estruturado`}</Pill><button className="iconBtn" title="Exportar workspace" onClick={()=>downloadJSON(p)}>⇩</button></div></header>
+
+      <div className="page">
+        {!ai.apiKey&&view!=='settings'&&<div className="apiBanner"><div><b>Ative os motores de IA</b><span>Conecte sua chave OpenAI uma única vez e gere Persona, RETINA, anúncios, abordagem, plano, proposta e diagnósticos.</span></div><button onClick={()=>navigate('settings')}>Conectar OpenAI</button></div>}
+        {view==='home'&&<Dashboard p={p} health={health} go={navigate} runEssential={runEssential} ai={ai}/>}
+        {view==='journey'&&<Journey p={p} health={health} go={navigate} run={runEngine} runEssential={runEssential} ai={ai}/>}
+        {view==='prospecting'&&<Prospecting p={p} tab={sub.prospecting} setTab={(v:string)=>setSub(s=>({...s,prospecting:v}))} run={runEngine} settings={globalSettings} update={update}/>}
+        {view==='campaigns'&&<Campaigns p={p} tab={sub.campaigns} setTab={(v:string)=>setSub(s=>({...s,campaigns:v}))} run={runEngine} update={update}/>}
+        {view==='performance'&&<Performance p={p} tab={sub.performance} setTab={(v:string)=>setSub(s=>({...s,performance:v}))} run={runEngine} update={update}/>}
+        {view==='learning'&&<Learning p={p} tab={sub.learning} setTab={(v:string)=>setSub(s=>({...s,learning:v}))} update={update}/>}
+        {view==='settings'&&<Settings ai={ai} setAI={saveAIKey} testAI={testAI} settings={globalSettings} setSettings={setGlobalSettings} busy={busy}/>}
       </div>
     </main>
-    {toast&&<div className="toast">✓ {toast}</div>}
+    {toast&&<div className="toast">{toast}</div>}
+    {busy&&<div className="busyOverlay"><div className="busyCard"><div className="orb">✦</div><small>NEXUS AI ENGINE</small><h3>{busy.label}</h3><p>{busy.step||'Processando contexto, estratégia e estrutura de saída...'}</p><div className="loader"><i/></div><span>Você pode aguardar nesta tela. O resultado será salvo no workspace.</span></div></div>}
   </div>;
 }
 
-function Dashboard({p,go}:any){
-  const b=calcBudget(p.budget.amount,p.budget.demand,p.budget.level,p.budget.gbpPct);
-  const m=metrics(p.performanceRows||[]);
-  const score=Math.min(100,25+(p.persona?20:0)+(p.content?.length?15:0)+(p.ads?15:0)+(p.performanceRows?.length?25:0));
-  return <>
-    <section className="hero">
-      <div><small>NEXUS MARKETING OPERATING SYSTEM</small><h2>Estratégia, mídia e mensuração em um único fluxo.</h2><p>Planeje campanhas, distribua verba, produza ativos, acompanhe performance e registre decisões sem perder o contexto do cliente.</p><div className="row"><button className="primary" onClick={()=>go('planner')}>Planejar campanha</button><button className="secondary" onClick={()=>go('performance')}>Ver performance</button></div></div>
-      <div className="score"><span>maturidade do workspace</span><b>{score}%</b><i style={{'--pct':score+'%'} as any}/></div>
-    </section>
-    <div className="metrics">
-      <Metric label="Orçamento planejado" value={BRL.format(b.total)} detail={b.googlePct+'% Google · '+b.metaPct+'% Meta'}/>
-      <Metric label="Leads no período" value={NUM.format(m.leads)} detail={'CPL '+BRL.format(m.cpl)}/>
-      <Metric label="Receita atribuída" value={BRL.format(m.revenue)} detail={'ROAS '+m.roas.toFixed(2)+'x'}/>
-      <Metric label="Cliques" value={NUM.format(m.clicks)} detail={'CTR '+m.ctr.toFixed(1)+'%'}/>
-    </div>
-    <div className="cols">
-      <Card title="Distribuição recomendada" eyebrow="MATRIZ ESTRATÉGICA">
-        <Channel name="Google" pct={b.googlePct} value={b.google}/><Channel name="Meta" pct={b.metaPct} value={b.meta}/>
-        <div className="subsplit"><span>Dentro de Google</span><b>GBP {b.gbpPct}% · Ads {b.adsPct}%</b></div>
-      </Card>
-      <Card title="Próximas ações" eyebrow="CHECKLIST">
-        <Action done={!!p.persona} label="Definir persona" onClick={()=>go('persona')}/>
-        <Action done={!!p.content?.length} label="Gerar conteúdo RETINA" onClick={()=>go('content')}/>
-        <Action done={!!p.ads} label="Estruturar anúncios" onClick={()=>go('ads')}/>
-        <Action done={!!p.performanceRows?.length} label="Revisar performance" onClick={()=>go('performance')}/>
-      </Card>
-    </div>
-    <Card title="Campanhas sugeridas" eyebrow="PORTFÓLIO DO PLANO">
-      <div className="campaigns">{b.campaigns.map((x:string,i:number)=><div key={x}><span>{String(i+1).padStart(2,'0')}</span><b>{x}</b><Pill>{i<2?'Prioridade':'Apoio'}</Pill></div>)}</div>
-    </Card>
-  </>;
-}
+function downloadJSON(p:any){const blob=new Blob([JSON.stringify(p,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=`nexus-${p.name.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.json`;a.click();URL.revokeObjectURL(u)}
+function nextAction(p:any){if(!p.specialty||!p.niche)return ['Completar briefing','A estratégia depende de uma base clara de negócio e público.','campaigns','planning'];if(!p.persona)return ['Gerar Persona','Mapeie dores, objeções e níveis de consciência.','campaigns','persona'];if(!p.content)return ['Gerar RETINA','Transforme a persona em pauta e roteiros prontos.','campaigns','content'];if(!p.metaAds||!p.googleAds)return ['Estruturar mídia','Crie os ativos de Meta e Google a partir do mesmo contexto.','campaigns','meta'];if(!p.performanceRows?.length)return ['Importar dados','Conecte performance real para fechar o ciclo.','performance','sources'];return ['Diagnosticar performance','Cruze dados, hipóteses e próximos testes.','performance','diagnostics']}
 
-function Channel({name,pct,value}:any){return <div className="channel"><div><span>{name}</span><b>{pct}% · {BRL.format(value)}</b></div><div><i style={{width:pct+'%'}}/></div></div>}
-function Action({done,label,onClick}:any){return <button className="action" onClick={onClick}><span className={done?'done':''}>{done?'✓':'○'}</span><b>{label}</b><i>›</i></button>}
+function Dashboard({p,health,go,runEssential,ai}:any){const b=calcBudget(p.budget.amount,p.budget.demand,p.budget.level,p.budget.gbpPct),m=metrics(p.performanceRows||[]),next=nextAction(p);return <>
+  <section className="hero"><div className="heroCopy"><div className="heroLabel">MARKETING OPERATING SYSTEM</div><h2>Menos menus. Mais clareza sobre o que fazer agora.</h2><p>O Nexus organiza estratégia, geração por IA, mídia, dados e aprendizado em uma única jornada. Cada módulo reaproveita o contexto do projeto para você não preencher as mesmas informações de novo.</p><div className="heroBtns"><button className="primary" onClick={()=>go(next[2],next[3])}>{next[0]} <span>→</span></button><button className="secondary" onClick={runEssential} disabled={!ai.apiKey}>✦ Executar jornada IA essencial</button></div></div><div className="heroNext"><span>PRÓXIMO PASSO RECOMENDADO</span><b>{next[0]}</b><p>{next[1]}</p><div className="scoreRing" style={{'--score':health.score} as any}><strong>{health.score}%</strong><small>estrutura</small></div></div></section>
+  <div className="metricGrid"><Metric label="Orçamento mensal" value={BRL.format(b.total)} detail={`${b.googlePct}% Google · ${b.metaPct}% Meta`}/><Metric label="Leads" value={DEC.format(m.leads)} detail={`CPL ${BRL.format(m.cpl)}`}/><Metric label="Receita atribuída" value={BRL.format(m.revenue)} detail={`ROAS ${m.roas.toFixed(2)}x`}/><Metric label="CTR" value={`${m.ctr.toFixed(1)}%`} detail={`${DEC.format(m.clicks)} cliques`}/></div>
+  <div className="grid2"><Card eyebrow="MAPA DA OPERAÇÃO" title="Onde seu projeto está"><OperationMap p={p} go={go}/></Card><Card eyebrow="PLANO DE MÍDIA" title="Distribuição recomendada"><BudgetSplit p={p}/></Card></div>
+  <Card eyebrow="ATALHOS INTELIGENTES" title="Ações que destravam o próximo nível"><div className="quickGrid"><Quick title="Jornada IA" text="Veja a sequência ideal dos motores e execute por etapa." icon="✦" onClick={()=>go('journey')}/><Quick title="Prospecção" text="Abordagem, plano de valor e proposta num mesmo fluxo." icon="↗" onClick={()=>go('prospecting')}/><Quick title="Performance" text="Importe dados reais e transforme métricas em decisões." icon="⌁" onClick={()=>go('performance')}/><Quick title="Auditoria" text="Cheque bloqueadores, avisos e artefatos desatualizados." icon="✓" onClick={()=>go('learning','audit')}/></div></Card>
+</>}
+function Quick({title,text,icon,onClick}:any){return <button className="quick" onClick={onClick}><i>{icon}</i><div><b>{title}</b><span>{text}</span></div><em>›</em></button>}
+function OperationMap({p,go}:any){const items=[['Briefing',!!(p.specialty&&p.niche),'campaigns','planning'],['Persona',!!p.persona,'campaigns','persona'],['RETINA',!!p.content,'campaigns','content'],['Mídia',!!p.metaAds&&!!p.googleAds,'campaigns','meta'],['Dados',!!p.performanceRows?.length,'performance','sources'],['Aprendizado',!!(p.decisions?.length||p.experiments?.length),'learning','decisions']];return <div className="operationMap">{items.map((x:any,i:number)=><button key={x[0]} onClick={()=>go(x[2],x[3])} className={x[1]?'done':''}><span>{x[1]?'✓':i+1}</span><b>{x[0]}</b><small>{x[1]?'concluído':'próxima ação'}</small></button>)}</div>}
+function BudgetSplit({p}:any){const b=calcBudget(p.budget.amount,p.budget.demand,p.budget.level,p.budget.gbpPct);return <div className="budgetSplit"><div className="splitRow"><span>Google</span><b>{b.googlePct}% · {BRL.format(b.google)}</b></div><div className="bar"><i style={{width:b.googlePct+'%'}}/></div><div className="splitRow"><span>Meta</span><b>{b.metaPct}% · {BRL.format(b.meta)}</b></div><div className="bar meta"><i style={{width:b.metaPct+'%'}}/></div><div className="budgetMini"><div><small>GBP</small><b>{BRL.format(b.gbp)}</b></div><div><small>Google Ads</small><b>{BRL.format(b.ads)}</b></div></div><div className="tagRow">{b.campaigns.map((x:string)=><span key={x}>{x}</span>)}</div></div>}
 
-function Planner({p,update}:any){
-  const b=calcBudget(p.budget.amount,p.budget.demand,p.budget.level,p.budget.gbpPct);
-  const set=(k:string,v:any)=>update((d:any)=>{d.budget={...d.budget,[k]:v}},'Planejamento atualizado');
-  return <div className="planner">
-    <Card title="Parâmetros da campanha" eyebrow="1. ESTRATÉGIA">
-      <Field label="Objetivo"><input value={p.objective} onChange={e=>update((d:any)=>d.objective=e.target.value)}/></Field>
-      <Field label="Orçamento mensal (R$)"><input type="number" min="0" value={p.budget.amount} onChange={e=>set('amount',Number(e.target.value))}/></Field>
-      <div className="form2">
-        <Field label="Tipo de demanda"><select value={p.budget.demand} onChange={e=>set('demand',e.target.value)}><option value="descoberta">Descoberta</option><option value="busca">Busca ativa</option><option value="hibrido">Híbrido</option></select></Field>
-        <Field label="Nível de investimento"><select value={p.budget.level} onChange={e=>set('level',e.target.value)}><option value="micro">Micro</option><option value="medio">Médio</option><option value="alto">Alto</option></select></Field>
-      </div>
-      <Field label={'Parcela do Google destinada ao GBP: '+p.budget.gbpPct+'%'}><input type="range" min="0" max="100" value={p.budget.gbpPct} onChange={e=>set('gbpPct',Number(e.target.value))}/></Field>
-    </Card>
-    <Card title="Alocação calculada" eyebrow="2. DISTRIBUIÇÃO">
-      <div className="bigSplit"><div><small>GOOGLE</small><b>{b.googlePct}%</b><span>{BRL.format(b.google)}</span></div><div><small>META</small><b>{b.metaPct}%</b><span>{BRL.format(b.meta)}</span></div></div>
-      <div className="metrics compact"><Metric label="GBP" value={BRL.format(b.gbp)}/><Metric label="Google Ads" value={BRL.format(b.ads)}/></div>
-      <h4>Campanhas recomendadas</h4><div className="tags">{b.campaigns.map((x:string)=><span key={x}>{x}</span>)}</div>
-    </Card>
-  </div>;
-}
+function Journey({p,health,go,run,runEssential,ai}:any){const steps=[
+  {n:1,title:'Base do negócio',desc:'Especialidade, público, oferta, localização e objetivo.',done:!!(p.specialty&&p.niche),action:()=>go('campaigns','planning'),cta:'Revisar briefing'},
+  {n:2,title:'Persona estratégica',desc:'32+ campos, objeções e 5 níveis de consciência.',done:!!p.persona,status:artifactStatus(p,'persona'),action:()=>run('persona'),cta:p.persona?'Regenerar com IA':'Gerar com IA'},
+  {n:3,title:'Conteúdo RETINA',desc:'6 peças completas: relacionamento, engajamento, transformação, 1x1, consciência e autoridade.',done:!!p.content,status:artifactStatus(p,'content'),action:()=>run('content'),cta:p.content?'Regenerar RETINA':'Gerar RETINA'},
+  {n:4,title:'Meta Ads',desc:'4 ângulos de aquisição, hooks, corpo, CTA, visual e hipótese.',done:!!p.metaAds,status:artifactStatus(p,'metaAds'),action:()=>run('metaAds'),cta:p.metaAds?'Regenerar anúncios':'Gerar Meta Ads'},
+  {n:5,title:'Google Ads',desc:'Intenção, negativas, 15 títulos, 4 descrições e sitelinks.',done:!!p.googleAds,status:artifactStatus(p,'googleAds'),action:()=>run('googleAds'),cta:p.googleAds?'Regenerar estrutura':'Gerar Google Ads'},
+  {n:6,title:'Dados e tracking',desc:'UTMs, eventos e CSV de performance fecham o loop de mensuração.',done:!!p.performanceRows?.length,action:()=>go('performance','sources'),cta:'Abrir dados'},
+  {n:7,title:'Diagnóstico e aprendizado',desc:'Achados, decisões e experimentos transformam performance em melhoria contínua.',done:!!(p.optimization||p.decisions?.length),action:()=>go('performance','diagnostics'),cta:'Diagnosticar'}
+];return <>
+  <div className="sectionIntro"><div><div className="eyebrow">FLUXO GUIADO</div><h2>Jornada IA do projeto</h2><p>O sistema agora mostra dependências, status e o próximo passo. Você pode trabalhar módulo por módulo ou executar a jornada essencial automaticamente.</p></div><button className="primary" disabled={!ai.apiKey} onClick={runEssential}>✦ Executar Persona → RETINA → Meta → Google</button></div>
+  <div className="journey">{steps.map((s:any)=><div className={`journeyStep ${s.done?'done':''}`} key={s.n}><div className="stepNo">{s.done?'✓':s.n}</div><div className="stepBody"><div className="stepTitle"><div><b>{s.title}</b><span>{s.desc}</span></div>{s.status&&<StatusDot status={s.status}/>}</div><button className={s.done?'secondary':'primary'} onClick={s.action}>{s.cta}</button></div></div>)}</div>
+  <Card eyebrow="QUALIDADE" title="Leitura de prontidão"><div className="healthChecks">{health.checks.map((c:any)=><div key={c.key}><span className={c.ok?'ok':''}>{c.ok?'✓':'○'}</span><b>{c.label}</b><em>{c.weight}%</em></div>)}</div></Card>
+</>}
 
-function Campaign({p,go}:any){
-  const steps=[
-    ['Planejamento',true,'planner'],['Persona',!!p.persona,'persona'],['Conteúdo',!!p.content?.length,'content'],
-    ['Anúncios',!!p.ads,'ads'],['Mensuração',!!p.performanceRows?.length,'performance'],['Experimentos',!!p.experiments?.length,'experiments']
-  ];
-  return <Card title="Campanha guiada" eyebrow="FLUXO OPERACIONAL"><p className="lead">Siga a sequência para transformar briefing em campanha mensurável. O Nexus preserva o histórico do workspace e indica o que ainda precisa ser concluído.</p><div className="steps">{steps.map((s:any,i:number)=><button key={s[0]} onClick={()=>go(s[2])}><span>{i+1}</span><div><b>{s[0]}</b><small>{s[1]?'Concluído':'Pendente'}</small></div><Pill tone={s[1]?'green':'muted'}>{s[1]?'OK':'Abrir'}</Pill></button>)}</div></Card>;
-}
+function Prospecting({p,tab,setTab,run,settings,update}:any){const [channel,setChannel]=useState('WhatsApp');const [context,setContext]=useState('');const [commercial,setCommercial]=useState({monthly:settings.proposalMonthly||1800,setup:settings.proposalSetup||600,media:'Verba de mídia paga diretamente às plataformas'});const items=[['approach','Abordagem'],['plan','Plano de Marketing'],['proposal','Proposta']];return <>
+  <div className="sectionIntro"><div><div className="eyebrow">COMERCIAL</div><h2>Prospecção em uma linha de raciocínio</h2><p>Não são três documentos isolados: a abordagem alimenta o plano, e o plano alimenta a proposta.</p></div></div><Tabs items={items} value={tab} onChange={setTab}/>
+  {tab==='approach'&&<div className="grid2"><Card eyebrow="ENTRADA" title="Contexto da abordagem"><Field label="Canal"><select value={channel} onChange={e=>setChannel(e.target.value)}><option>WhatsApp</option><option>Instagram</option><option>Ligação</option><option>Presencial</option><option>E-mail</option></select></Field><Field label="Contexto atual" hint="Ex.: nunca falei com a empresa; indicação de síndico; já respondeu uma mensagem..."><textarea value={context} onChange={e=>setContext(e.target.value)} placeholder="Descreva o que já aconteceu."/></Field><div className="managerSummary"><small>GESTOR</small><b>{settings.managerName||'Configure seu perfil'}</b><span>{settings.managerSpecialty}</span></div><button className="primary full" onClick={()=>run('approach',{manager:settings,channel,context})}>✦ Gerar 5 abordagens</button></Card><ResultCard title="Abordagens geradas" empty="Gere o primeiro conjunto para ver mensagens, follow-ups, objeções e perguntas de descoberta.">{p.approach&&<ApproachResult data={p.approach}/>}</ResultCard></div>}
+  {tab==='plan'&&<div className="grid2"><Card eyebrow="CONTEXTO" title="Plano de Marketing"><p className="muted">O motor reaproveita briefing, persona e planejamento de mídia. Você não precisa preencher tudo novamente.</p><InfoStack p={p}/><button className="primary full" onClick={()=>run('marketingPlan',{context,manager:settings})}>✦ Gerar plano executivo</button></Card><ResultCard title="Plano estratégico" empty="Gere um plano para apresentar diagnóstico, canais, funil, 90 dias e KPIs.">{p.marketingPlan&&<MarketingPlanResult data={p.marketingPlan}/>}</ResultCard></div>}
+  {tab==='proposal'&&<div className="grid2"><Card eyebrow="CONDIÇÕES" title="Proposta comercial"><div className="form2"><Field label="Setup (R$)"><input type="number" value={commercial.setup} onChange={e=>setCommercial({...commercial,setup:Number(e.target.value)})}/></Field><Field label="Mensalidade (R$)"><input type="number" value={commercial.monthly} onChange={e=>setCommercial({...commercial,monthly:Number(e.target.value)})}/></Field></div><Field label="Verba de mídia"><input value={commercial.media} onChange={e=>setCommercial({...commercial,media:e.target.value})}/></Field><button className="primary full" onClick={()=>run('proposal',{...commercial,manager:settings})}>✦ Gerar proposta</button>{p.proposal&&<div className="proposalStatus"><span>Status comercial</span><select value={p.proposal.status||'Follow UP'} onChange={e=>update((d:any)=>{d.proposal.status=e.target.value},'Status da proposta atualizado')}><option>Follow UP</option><option>Fechado</option><option>Declinado</option></select></div>}</Card><ResultCard title="Proposta" empty="O documento final aparecerá aqui, alinhado ao plano e às condições comerciais.">{p.proposal&&<ProposalResult data={p.proposal}/>}</ResultCard></div>}
+</>}
+function InfoStack({p}:any){return <div className="infoStack"><div><span>Negócio</span><b>{p.name}</b></div><div><span>Público</span><b>{p.niche||'—'}</b></div><div><span>Persona</span><b>{p.persona?.nome||'Ainda não gerada'}</b></div><div><span>Conteúdo</span><b>{p.content?.items?.length?`${p.content.items.length} peças RETINA`:'Ainda não gerado'}</b></div></div>}
+function ResultCard({title,empty,children}:any){return <Card eyebrow="OUTPUT" title={title}>{children||<Empty title="Ainda sem resultado" text={empty}/>}</Card>}
+function ApproachResult({data}:any){return <div className="resultList">{(data.approaches||[]).map((a:any,i:number)=><div className="outputItem" key={i}><small>ABORDAGEM {i+1} · {a.name}</small><b>{a.opening}</b><p>{a.message}</p><em>{a.whyItWorks}</em></div>)}{data.followUps?.length>0&&<><h4>Follow-ups</h4>{data.followUps.map((f:any,i:number)=><div className="miniLine" key={i}><b>{f.when}</b><span>{f.message}</span></div>)}</>}</div>}
+function MarketingPlanResult({data}:any){return <div className="document"><p className="lead">{data.executiveSummary}</p><DocList title="Diagnóstico" items={data.diagnosis}/><DocList title="Objetivos" items={data.objectives}/><h4>Canais</h4>{(data.channels||[]).map((x:any,i:number)=><div className="miniLine" key={i}><b>{x.name}</b><span>{x.role} · {x.priority}</span></div>)}<h4>Plano de 90 dias</h4>{(data.ninetyDayPlan||[]).map((x:any,i:number)=><div className="timelineItem" key={i}><span>{x.period}</span><ul>{(x.actions||[]).map((a:string)=><li key={a}>{a}</li>)}</ul></div>)}</div>}
+function ProposalResult({data}:any){return <div className="document proposalDoc"><div className="proposalHero"><small>PROPOSTA</small><h2>{data.title}</h2><p>{data.context}</p></div><DocList title="Objetivos" items={data.objectives}/><DocList title="Escopo" items={data.scope}/><DocList title="Entregáveis" items={data.deliverables}/><div className="investment"><span>Setup <b>{data.investment?.setup}</b></span><span>Mensal <b>{data.investment?.monthly}</b></span></div><p className="nextStep">{data.nextStep}</p></div>}
+function DocList({title,items}:any){if(!items?.length)return null;return <div className="docList"><h4>{title}</h4><ul>{items.map((x:string,i:number)=><li key={i}>{x}</li>)}</ul></div>}
 
-function Persona({p,update}:any){
-  const generate=()=>update((d:any)=>{d.persona=generatePersona(d.name,d.niche,d.audience)},'Persona gerada');
-  return <div className="cols wide">
-    <Card title="Contexto do público" eyebrow="PERSONA">
-      <Field label="Nicho"><input value={p.niche} onChange={e=>update((d:any)=>d.niche=e.target.value)}/></Field>
-      <Field label="Público-alvo"><textarea value={p.audience} onChange={e=>update((d:any)=>d.audience=e.target.value)}/></Field>
-      <button className="primary" onClick={generate}>Gerar persona estratégica</button>
-    </Card>
-    <Card title={p.persona?.name||'Persona ainda não gerada'} eyebrow="SÍNTESE">
-      {!p.persona?<p className="muted">Use o contexto do negócio para gerar dores, objeções e gatilhos.</p>:<>
-        <p className="lead">{p.persona.profile}</p>
-        <List title="Dores" items={p.persona.pains}/><List title="Objeções" items={p.persona.objections}/><List title="Gatilhos" items={p.persona.triggers}/>
-      </>}
-    </Card>
-  </div>;
-}
-function List({title,items}:any){return <div className="list"><b>{title}</b>{items.map((x:string)=><p key={x}>• {x}</p>)}</div>}
+function Campaigns({p,tab,setTab,run,update}:any){const items=[['planning','Planejamento'],['persona','Persona'],['content','RETINA'],['meta','Meta Ads'],['google','Google Ads'],['tracking','Tracking']];return <><div className="sectionIntro"><div><div className="eyebrow">ESTRATÉGIA + EXECUÇÃO</div><h2>Campanha sem retrabalho de contexto</h2><p>Briefing, persona, conteúdo e anúncios usam a mesma base. Alterou negócio ou oferta? O Nexus sinaliza o que ficou desatualizado.</p></div></div><Tabs items={items} value={tab} onChange={setTab}/>
+  {tab==='planning'&&<Planning p={p} update={update}/>} {tab==='persona'&&<Persona p={p} run={run}/>} {tab==='content'&&<Content p={p} run={run}/>} {tab==='meta'&&<MetaAds p={p} run={run}/>} {tab==='google'&&<GoogleAds p={p} run={run}/>} {tab==='tracking'&&<Tracking p={p} update={update}/>}</>}
 
-function Content({p,update}:any){
-  const [topic,setTopic]=useState(p.niche||'serviço técnico');
-  const generate=()=>update((d:any)=>{d.content=generateRetina(topic)},'Pauta RETINA gerada');
-  return <>
-    <Card title="Motor de conteúdo RETINA" eyebrow="CRIAÇÃO"><div className="inline"><Field label="Tema da campanha"><input value={topic} onChange={e=>setTopic(e.target.value)}/></Field><button className="primary" onClick={generate}>Gerar 6 ângulos</button></div></Card>
-    <div className="contentGrid">{(p.content||[]).map((x:any,i:number)=><Card key={i} eyebrow={x.type.toUpperCase()} title={x.title}><p className="muted">{x.cta}</p><div className="creativeMock"><span>{x.type.slice(0,1)}</span><b>{x.title}</b></div></Card>)}</div>
-  </>;
-}
+function Planning({p,update}:any){const save=(key:string,v:any)=>update((d:any)=>{const before=JSON.stringify([d.name,d.specialty,d.niche,d.description,d.products,d.services,d.location,d.offers]);d[key]=v;const after=JSON.stringify([d.name,d.specialty,d.niche,d.description,d.products,d.services,d.location,d.offers]);if(before!==after)d.versions.business=(d.versions.business||0)+1},'Briefing atualizado');const setBudget=(k:string,v:any)=>update((d:any)=>{d.budget={...d.budget,[k]:v}},'Planejamento de mídia atualizado');return <div className="grid2 planningGrid"><Card eyebrow="BASE DO NEGÓCIO" title="Briefing único"><Field label="Marca"><input value={p.name} onChange={e=>save('name',e.target.value)}/></Field><Field label="Especialidade / o que faz"><input value={p.specialty||''} onChange={e=>save('specialty',e.target.value)}/></Field><Field label="Público-alvo / quem compra"><input value={p.niche||''} onChange={e=>save('niche',e.target.value)}/></Field><Field label="Descrição"><textarea value={p.description||''} onChange={e=>save('description',e.target.value)}/></Field><div className="form2"><Field label="Serviços"><textarea value={p.services||''} onChange={e=>save('services',e.target.value)}/></Field><Field label="Ofertas"><textarea value={p.offers||''} onChange={e=>save('offers',e.target.value)}/></Field></div><Field label="Localização"><input value={p.location||''} onChange={e=>save('location',e.target.value)}/></Field></Card><div><Card eyebrow="MATRIZ ESTRATÉGICA" title="Orçamento e demanda"><Field label="Objetivo"><input value={p.objective} onChange={e=>save('objective',e.target.value)}/></Field><Field label="Orçamento mensal"><input type="number" value={p.budget.amount} onChange={e=>setBudget('amount',Number(e.target.value))}/></Field><div className="form2"><Field label="Demanda"><select value={p.budget.demand} onChange={e=>setBudget('demand',e.target.value)}><option value="descoberta">Descoberta</option><option value="busca">Busca ativa</option><option value="hibrido">Híbrida</option></select></Field><Field label="Nível"><select value={p.budget.level} onChange={e=>setBudget('level',e.target.value)}><option value="micro">Micro</option><option value="medio">Médio</option><option value="alto">Alto</option></select></Field></div><Field label={`Google destinado ao GBP: ${p.budget.gbpPct}%`}><input type="range" min="0" max="100" value={p.budget.gbpPct} onChange={e=>setBudget('gbpPct',Number(e.target.value))}/></Field><BudgetSplit p={p}/></Card></div></div>}
 
-function Ads({p,update}:any){
-  const generate=()=>update((d:any)=>{
-    const svc=d.niche||'serviço';
-    d.ads={
-      meta:[
-        {hook:'Problema invisível também gera custo.',body:'Transforme sinais dispersos em um diagnóstico claro para decidir com segurança.',cta:'Solicitar avaliação'},
-        {hook:'Antes de investir na correção, investigue a causa.',body:'Método técnico, evidências e orientação objetiva para reduzir retrabalho.',cta:'Falar com especialista'},
-        {hook:'Decisão técnica começa por evidência.',body:'Organize sintomas, histórico e medições em um plano de ação verificável.',cta:'Conhecer o método'},
-        {hook:'O barato pode sair caro quando a causa não foi diagnosticada.',body:'Avalie o cenário antes de definir a intervenção.',cta:'Pedir proposta'}
-      ],
-      google:{
-        keywords:['empresa de '+svc,svc+' sorocaba','orçamento '+svc,'especialista em '+svc,'contratar '+svc],
-        titles:['Especialista em '+svc,'Diagnóstico Técnico','Atendimento em Sorocaba','Solicite uma Avaliação','Engenharia com Método'],
-        descriptions:['Investigação técnica, diagnóstico e orientação objetiva para sua tomada de decisão.','Atendimento especializado com registro técnico e plano de ação claro.']
-      }
-    }
-  },'Estrutura de anúncios gerada');
-  return <>
-    <div className="pageActions"><button className="primary" onClick={generate}>{p.ads?'Regenerar anúncios':'Gerar anúncios'}</button></div>
-    {!p.ads?<Card title="Estrutura ainda vazia" eyebrow="META + GOOGLE"><p className="muted">Gere uma primeira versão a partir do contexto do workspace. Depois refine textos, termos e criativos.</p></Card>:<div className="cols">
-      <Card title="Meta Ads" eyebrow="4 VARIAÇÕES">{p.ads.meta.map((a:any,i:number)=><div className="ad" key={i}><small>ANÚNCIO {i+1}</small><b>{a.hook}</b><p>{a.body}</p><span>{a.cta}</span></div>)}</Card>
-      <Card title="Google Ads" eyebrow="BUSCA ATIVA"><h4>Palavras-chave</h4><div className="tags">{p.ads.google.keywords.map((x:string)=><span key={x}>{x}</span>)}</div><h4>Títulos</h4>{p.ads.google.titles.map((x:string)=><p className="line" key={x}>{x}</p>)}<h4>Descrições</h4>{p.ads.google.descriptions.map((x:string)=><p className="muted" key={x}>{x}</p>)}</Card>
-    </div>}
-  </>;
-}
+function Persona({p,run}:any){const status=artifactStatus(p,'persona');return <div className="grid2"><Card eyebrow="MOTOR IA" title="Persona estratégica" action={<StatusDot status={status}/>}><p className="muted">O motor original foi preservado: diferencia especialidade (o que o negócio faz) de público-alvo (quem compra), mapeia dores, objeções e 5 níveis de consciência.</p><InfoStack p={p}/><div className="buttonRow"><button className="primary" onClick={()=>run('persona')}>✦ {p.persona?'Regenerar persona':'Gerar persona'}</button>{p.persona&&<button className="secondary" onClick={()=>run('deepDive')}>Aprofundar dores e desejos</button>}</div></Card><ResultCard title={p.persona?.nome||'Persona'} empty="Gere a persona para desbloquear uma visão profunda do comprador.">{p.persona&&<PersonaResult data={p.persona}/>}</ResultCard></div>}
 
-function Performance({p,update}:any){
-  const m=metrics(p.performanceRows||[]);
-  const importCSV=async(file:File)=>{
-    const rows=normalizeRows(parseCSV(await file.text()));
-    if(!rows.length)return alert('CSV sem linhas reconhecidas.');
-    update((d:any)=>d.performanceRows=rows,'Dados de performance importados');
-  };
-  return <>
-    <div className="metrics">
-      <Metric label="Investimento" value={BRL.format(m.spend)}/><Metric label="Impressões" value={NUM.format(m.impressions)}/>
-      <Metric label="Cliques" value={NUM.format(m.clicks)} detail={'CPC '+BRL.format(m.cpc)}/><Metric label="Leads" value={NUM.format(m.leads)} detail={'CPL '+BRL.format(m.cpl)}/>
-      <Metric label="Receita" value={BRL.format(m.revenue)} detail={'ROAS '+m.roas.toFixed(2)+'x'}/>
-    </div>
-    <Card title="Importar dados" eyebrow="CSV GOOGLE / META / GA4" action={<label className="uploadBtn">Importar CSV<input type="file" accept=".csv,text/csv" onChange={e=>e.target.files?.[0]&&importCSV(e.target.files[0])}/></label>}>
-      <div className="table"><div className="tr head"><span>Data</span><span>Campanha</span><span>Invest.</span><span>Cliques</span><span>Leads</span><span>Receita</span></div>{(p.performanceRows||[]).map((r:any)=><div className="tr" key={r.id}><span>{r.date||'—'}</span><b>{r.campaign}</b><span>{BRL.format(r.spend)}</span><span>{NUM.format(r.clicks)}</span><span>{NUM.format(r.leads)}</span><span>{BRL.format(r.revenue)}</span></div>)}</div>
-    </Card>
-  </>;
-}
+function PersonaResult({data}:any){return <div className="persona"><div className="personaHead"><div className="avatar">{(data.nome||'P').slice(0,1)}</div><div><b>{data.nome}</b><span>{data.idade} · {data.profissao}</span></div></div><p className="lead">{data.descricao_breve}</p><div className="personaGrid"><div><small>PROBLEMA</small><p>{data.problema_principal}</p></div><div><small>OBSTÁCULO</small><p>{data.obstaculo_principal}</p></div><div><small>SONHO</small><p>{data.sonho_principal}</p></div><div><small>OBJETIVO</small><p>{data.meta_principal}</p></div></div><DocList title="Medos" items={data.medos}/><DocList title="Objeções" items={data.objecoes}/>{data.exploracao&&<DocList title="Desejos aprofundados" items={data.exploracao.desejos}/>}</div>}
 
-function Terms({p,update}:any){
-  const defaults=['vistoria de imóvel sorocaba','curso grátis de engenharia','empresa de laudo técnico','como fazer laudo pdf','engenheiro para infiltração','salário engenheiro civil'];
-  const terms=p.searchTerms||defaults.map((term:string)=>({term,status:classifySearchTerm(term),action:''}));
-  const change=(i:number,action:string)=>update((d:any)=>{const base=d.searchTerms||terms;d.searchTerms=base.map((x:any,n:number)=>n===i?{...x,action}:x)},'Termo revisado');
-  return <Card title="Termos de pesquisa" eyebrow="CLASSIFICAÇÃO ASSISTIDA"><div className="terms">{terms.map((t:any,i:number)=><div key={t.term}><div><b>{t.term}</b><Pill tone={t.status==='negativo'?'red':t.status==='alta intenção'?'green':'amber'}>{t.status}</Pill></div><select value={t.action} onChange={e=>change(i,e.target.value)}><option value="">Sem ação</option><option value="manter">Manter</option><option value="negativar">Negativar</option><option value="expandir">Expandir</option></select></div>)}</div></Card>;
-}
+function Content({p,run}:any){const status=artifactStatus(p,'content');return <><div className="actionBar"><div><b>Plano RETINA</b><span>6 categorias com roteiro utilizável, não só ideias soltas.</span></div><div><StatusDot status={status}/><button className="primary" onClick={()=>run('content')}>✦ {p.content?'Regenerar plano':'Gerar plano RETINA'}</button></div></div>{!p.content?<Empty title="Conteúdo ainda não gerado" text="O motor usa a persona e o briefing do projeto para criar exatamente 6 peças completas."/>:<div className="contentGrid">{(p.content.items||[]).map((x:any,i:number)=><Card key={i} eyebrow={`${String(i+1).padStart(2,'0')} · ${x.category}`} title={x.title}><div className="formatBadge">{x.format}</div><b className="hook">{x.hook}</b><p className="muted clamp">{x.script}</p><div className="contentMeta"><span>{x.dorDesejo}</span><span>{x.objecaoDuvida}</span></div></Card>)}</div>}</>}
 
-function Experiments({p,update}:any){
-  const [form,setForm]=useState({name:'Gancho técnico x gancho de dor',metric:'cpl',a:48,b:39});
-  const add=()=>update((d:any)=>{d.experiments=[{...form,id:Date.now()},...(d.experiments||[])]},'Experimento registrado');
-  return <div className="cols wide">
-    <Card title="Novo experimento" eyebrow="A/B"><Field label="Hipótese"><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field><div className="form3"><Field label="Métrica"><select value={form.metric} onChange={e=>setForm({...form,metric:e.target.value})}><option value="cpl">CPL</option><option value="ctr">CTR</option><option value="conversion">Conversão</option></select></Field><Field label="A"><input type="number" value={form.a} onChange={e=>setForm({...form,a:Number(e.target.value)})}/></Field><Field label="B"><input type="number" value={form.b} onChange={e=>setForm({...form,b:Number(e.target.value)})}/></Field></div><button className="primary" onClick={add}>Registrar experimento</button></Card>
-    <div>{!(p.experiments||[]).length?<Card title="Sem testes ainda"><p className="muted">Registre a primeira hipótese para criar memória de aprendizado.</p></Card>:(p.experiments||[]).map((e:any)=>{const r=evaluateExperiment(e);return <Card key={e.id} title={e.name} eyebrow={e.metric.toUpperCase()} action={<Pill tone={r.winner==='inconclusivo'?'amber':'green'}>{r.winner==='inconclusivo'?'Inconclusivo':'Venceu '+r.winner}</Pill>}><div className="ab"><span>A <b>{e.a}</b></span><span>B <b>{e.b}</b></span></div><p className="muted">Diferença relativa: {r.delta.toFixed(1)}%</p></Card>})}</div>
-  </div>;
-}
+function MetaAds({p,run}:any){const status=artifactStatus(p,'metaAds');return <><div className="actionBar"><div><b>Meta Ads</b><span>Ângulos, hooks, corpo, CTA, ideia visual e hipótese.</span></div><div><StatusDot status={status}/><button className="primary" onClick={()=>run('metaAds')}>✦ {p.metaAds?'Regenerar':'Gerar Meta Ads'}</button></div></div>{!p.metaAds?<Empty title="Meta Ads ainda não gerado" text="Gere anúncios ancorados na persona, oferta e conteúdo do projeto."/>:<div className="adsGrid">{(p.metaAds.ads||[]).map((a:any,i:number)=><Card key={i} eyebrow={`ANÚNCIO ${i+1}`} title={a.angle}><div className="adPreview"><small>GANCHO PRINCIPAL</small><b>{a.hooks?.pergunta||a.hooks?.contraintuitiva}</b><p>{a.body}</p><button>{a.cta}</button></div><div className="hookList">{Object.entries(a.hooks||{}).map(([k,v]:any)=><div key={k}><span>{k}</span><p>{v}</p></div>)}</div><div className="hypothesis">Hipótese: {a.hypothesis}</div></Card>)}</div>}</>}
 
-function Proposal({p,update}:any){
-  const q=p.proposal||{monthly:1800,setup:600,status:'Follow UP'};
-  const set=(k:string,v:any)=>update((d:any)=>{d.proposal={...(d.proposal||q),[k]:v}},'Proposta atualizada');
-  return <div className="cols wide">
-    <Card title="Condições comerciais" eyebrow="PROPOSTA"><div className="form2"><Field label="Gestão mensal (R$)"><input type="number" value={q.monthly} onChange={e=>set('monthly',Number(e.target.value))}/></Field><Field label="Setup (R$)"><input type="number" value={q.setup} onChange={e=>set('setup',Number(e.target.value))}/></Field></div><Field label="Status"><select value={q.status} onChange={e=>set('status',e.target.value)}><option>Follow UP</option><option>Fechado</option><option>Declinado</option></select></Field></Card>
-    <Card title={p.name} eyebrow="RESUMO EXECUTIVO"><div className="price"><small>GESTÃO MENSAL</small><b>{BRL.format(q.monthly)}</b><span>Setup: {BRL.format(q.setup)}</span></div><List title="Escopo" items={['Planejamento de campanhas','Google Ads e Meta Ads','Otimização de GBP','Mensuração e relatório','Ciclo de testes e decisões']}/><Pill tone={q.status==='Fechado'?'green':q.status==='Declinado'?'red':'amber'}>{q.status}</Pill></Card>
-  </div>;
-}
+function GoogleAds({p,run}:any){const status=artifactStatus(p,'googleAds');return <><div className="actionBar"><div><b>Google Ads</b><span>Intenção, negativas, 15 títulos, 4 descrições e sitelinks.</span></div><div><StatusDot status={status}/><button className="primary" onClick={()=>run('googleAds')}>✦ {p.googleAds?'Regenerar':'Gerar Google Ads'}</button></div></div>{!p.googleAds?<Empty title="Google Ads ainda não gerado" text="O motor cria a estrutura de busca a partir de especialidade, público, oferta e localização."/>:<div className="grid2"><Card eyebrow="PALAVRAS-CHAVE" title="Mapa de intenção"><h4>Alta intenção</h4><div className="tagRow">{(p.googleAds.keywords?.highIntent||[]).map((x:string)=><span key={x}>{x}</span>)}</div><h4>Negativas</h4><div className="tagRow negative">{(p.googleAds.keywords?.negative||[]).map((x:string)=><span key={x}>{x}</span>)}</div></Card><Card eyebrow="RESPONSIVE SEARCH AD" title="Ativos"><h4>Títulos</h4><div className="lineList">{(p.googleAds.titles||[]).map((x:string,i:number)=><div key={i}><span>{i+1}</span><b>{x}</b><small>{x.length}/30</small></div>)}</div><h4>Descrições</h4>{(p.googleAds.descriptions||[]).map((x:string,i:number)=><p className="description" key={i}>{x}<small>{x.length}/90</small></p>)}</Card></div>}</>}
 
-function Settings({p,update}:any){
-  return <div className="cols wide">
-    <Card title="Contexto do workspace" eyebrow="NEGÓCIO"><Field label="Nome"><input value={p.name} onChange={e=>update((d:any)=>d.name=e.target.value)}/></Field><Field label="Nicho"><input value={p.niche} onChange={e=>update((d:any)=>d.niche=e.target.value)}/></Field><Field label="Público-alvo"><textarea value={p.audience} onChange={e=>update((d:any)=>d.audience=e.target.value)}/></Field></Card>
-    <div><Card title="Motor de IA" eyebrow="INTEGRAÇÃO"><Pill tone="amber">OpenAI · próxima etapa</Pill><p className="muted">O sistema funciona hoje com regras, templates e matriz estratégica local. A camada de geração por modelo será conectada via API sem alterar o fluxo operacional.</p></Card><Card title="Persistência" eyebrow="LOCAL-FIRST"><Pill tone="green">Ativa</Pill><p className="muted">Workspaces, planejamento, conteúdo, anúncios, experimentos e proposta ficam salvos neste navegador.</p></Card></div>
-  </div>;
-}
+function Tracking({p,update}:any){const t=p.tracking||{};const set=(k:string,v:any)=>update((d:any)=>{d.tracking={...(d.tracking||{}),[k]:v}},'Tracking atualizado');return <div className="grid2"><Card eyebrow="UTM BUILDER" title="Padronização"><Field label="utm_source"><input value={t.utmSource||''} onChange={e=>set('utmSource',e.target.value)}/></Field><Field label="utm_medium"><input value={t.utmMedium||''} onChange={e=>set('utmMedium',e.target.value)}/></Field><Field label="utm_campaign"><input value={t.utmCampaign||''} onChange={e=>set('utmCampaign',e.target.value)}/></Field><div className="utmPreview">?utm_source={t.utmSource||'{source}'}&utm_medium={t.utmMedium||'{medium}'}&utm_campaign={t.utmCampaign||'{campaign}'}</div></Card><Card eyebrow="CONVERSÕES" title="Eventos essenciais"><div className="eventList">{['lead','whatsapp_click','form_submit','phone_click','purchase'].map(ev=><label key={ev}><input type="checkbox" checked={(t.events||[]).includes(ev)} onChange={e=>set('events',e.target.checked?[...(t.events||[]),ev]:(t.events||[]).filter((x:string)=>x!==ev))}/><span><b>{ev}</b><small>Evento de mensuração</small></span></label>)}</div></Card></div>}
+
+function Performance({p,tab,setTab,run,update}:any){const items=[['overview','Visão'],['sources','Fontes de dados'],['terms','Termos'],['creatives','Criativos'],['diagnostics','Diagnóstico']];return <><div className="sectionIntro"><div><div className="eyebrow">MENSURAÇÃO</div><h2>Dados que viram decisão</h2><p>Importe performance real, confira métricas e use IA somente onde ela agrega interpretação — sem mascarar falta de dados.</p></div></div><Tabs items={items} value={tab} onChange={setTab}/>{tab==='overview'&&<PerformanceOverview p={p}/>} {tab==='sources'&&<Sources p={p} update={update}/>} {tab==='terms'&&<Terms p={p} run={run} update={update}/>} {tab==='creatives'&&<Creatives p={p}/>} {tab==='diagnostics'&&<Diagnostics p={p} run={run}/>}</>}
+
+function PerformanceOverview({p}:any){const m=metrics(p.performanceRows||[]);const byCamp:any={};(p.performanceRows||[]).forEach((r:any)=>{const k=r.campaign||'Sem campanha';byCamp[k]=byCamp[k]||[];byCamp[k].push(r)});return <><div className="metricGrid five"><Metric label="Investimento" value={BRL.format(m.spend)}/><Metric label="Impressões" value={DEC.format(m.impressions)}/><Metric label="CTR" value={`${m.ctr.toFixed(2)}%`} detail={`CPC ${BRL.format(m.cpc)}`}/><Metric label="Leads" value={DEC.format(m.leads)} detail={`CPL ${BRL.format(m.cpl)}`}/><Metric label="ROAS" value={`${m.roas.toFixed(2)}x`} detail={BRL.format(m.revenue)}/></div><Card eyebrow="CAMPANHAS" title="Performance consolidada"><div className="dataTable"><div className="tr head"><span>Campanha</span><span>Invest.</span><span>Cliques</span><span>Leads</span><span>CPL</span><span>ROAS</span></div>{Object.entries(byCamp).map(([name,rows]:any)=>{const x=metrics(rows);return <div className="tr" key={name}><b>{name}</b><span>{BRL.format(x.spend)}</span><span>{DEC.format(x.clicks)}</span><span>{DEC.format(x.leads)}</span><span>{BRL.format(x.cpl)}</span><span>{x.roas.toFixed(2)}x</span></div>})}</div></Card></>}
+
+function Sources({p,update}:any){const importCSV=async(file:File)=>{const rows=normalizeRows(parseCSV(await file.text()));if(!rows.length){alert('Não reconheci linhas no CSV.');return}update((d:any)=>{d.performanceRows=rows;d.versions.performance=(d.versions.performance||0)+1},`${rows.length} linhas de performance importadas`)};return <div className="grid2"><Card eyebrow="IMPORTAÇÃO" title="Google / Meta / GA4"><div className="dropzone"><div>⇧</div><b>Importe CSV exportado das plataformas</b><span>Reconhece campanha, gasto, impressões, cliques, leads/conversões e receita.</span><label className="primary">Escolher CSV<input type="file" accept=".csv,text/csv" onChange={e=>e.target.files?.[0]&&importCSV(e.target.files[0])}/></label></div></Card><Card eyebrow="STATUS" title="Base atual"><div className="sourceStats"><div><span>Linhas</span><b>{p.performanceRows?.length||0}</b></div><div><span>Campanhas</span><b>{new Set((p.performanceRows||[]).map((r:any)=>r.campaign)).size}</b></div><div><span>Período</span><b>{p.performanceRows?.[0]?.date||'—'}</b></div></div><button className="dangerText" onClick={()=>confirm('Limpar dados importados?')&&update((d:any)=>{d.performanceRows=[]},'Dados de performance limpos')}>Limpar base</button></Card></div>}
+
+function Terms({p,run,update}:any){const [raw,setRaw]=useState((p.searchTerms||[]).join('\n'));const terms=raw.split('\n').map(x=>x.trim()).filter(Boolean);const save=()=>update((d:any)=>{d.searchTerms=terms},'Lista de termos atualizada');return <div className="grid2"><Card eyebrow="TERMOS DE PESQUISA" title="Classificação por intenção"><Field label="Cole um termo por linha"><textarea className="tall" value={raw} onChange={e=>setRaw(e.target.value)} placeholder={'vistoria apartamento novo\ncurso de engenharia\nlaudo técnico sorocaba'}/></Field><div className="buttonRow"><button className="secondary" onClick={save}>Salvar termos</button><button className="primary" disabled={!terms.length} onClick={()=>run('searchTerms',{terms:terms.map(term=>({term,clicks:0,cost:0,conversions:0}))})}>✦ Classificar com IA</button></div></Card><Card eyebrow="RESULTADO" title="Intenção e ação">{!p.searchTermClassifications?<Empty title="Sem classificação" text="Cole termos e rode o motor. Para recomendações com evidência, inclua depois o relatório real de termos."/>:<div className="classificationList">{p.searchTermClassifications.map((x:any,i:number)=><div key={i}><div><b>{x.term}</b><Pill tone={x.intent==='Alta'?'green':x.intent==='Irrelevante'?'red':'amber'}>{x.intent}</Pill></div><p>{x.reason}</p><span>{x.category} · {x.recommendedAction}</span></div>)}</div>}</Card></div>}
+
+function Creatives({p}:any){const ads=p.metaAds?.ads||[],rows=p.performanceRows||[];return <>{!ads.length?<Empty title="Gere Meta Ads primeiro" text="O painel de criativos cruza os anúncios gerados com dados importados quando os nomes estiverem disponíveis."/>:<div className="adsGrid">{ads.map((a:any,i:number)=>{const linked=rows.filter((r:any)=>r.ad&&String(r.ad).includes(String(i+1)));const m=metrics(linked);return <Card key={i} eyebrow={`CRIATIVO ${i+1}`} title={a.angle}><p className="muted">{a.hooks?.contraintuitiva||a.hooks?.pergunta}</p><div className="creativeStats"><span>Invest. <b>{linked.length?BRL.format(m.spend):'N/D'}</b></span><span>CTR <b>{linked.length?m.ctr.toFixed(2)+'%':'N/D'}</b></span><span>Leads <b>{linked.length?DEC.format(m.leads):'N/D'}</b></span></div><small className="muted">{linked.length?'Dados vinculados pelo nome do anúncio.':'Sem vínculo com dados reais. Não estimamos performance.'}</small></Card>})}</div>}</>}
+
+function Diagnostics({p,run}:any){const m=metrics(p.performanceRows||[]),local=localFindings(p);return <div className="grid2"><Card eyebrow="REGRAS LOCAIS" title="Sinais observados"><div className="findingList">{local.map((x:any,i:number)=><div className={x.severity} key={i}><span>{x.severity==='ok'?'✓':x.severity==='danger'?'!':'•'}</span><div><b>{x.title}</b><p>{x.text}</p></div></div>)}</div><button className="primary full" onClick={()=>run('optimization',{metrics:m,findings:local,rows:p.performanceRows||[]})}>✦ Interpretar e priorizar com IA</button></Card><ResultCard title="Diagnóstico assistido" empty="A IA vai partir das métricas e dos sinais locais, declarando hipóteses e nível de confiança.">{p.optimization&&<div className="findingList detailed"><p className="lead">{p.optimization.summary}</p>{(p.optimization.findings||[]).map((f:any,i:number)=><div className={f.severity} key={i}><span>{i+1}</span><div><b>{f.title}</b><p>{f.observation}</p><small><strong>Evidência:</strong> {f.evidence}</small><small><strong>Hipótese:</strong> {f.hypothesis}</small><small><strong>Ação:</strong> {f.action}</small><small><strong>Revisão:</strong> {f.nextReview}</small></div></div>)}</div>}</ResultCard></div>}
+
+function Learning({p,tab,setTab,update}:any){const items=[['decisions','Decisões'],['experiments','Experimentos'],['audit','Auditoria'],['history','Histórico']];return <><div className="sectionIntro"><div><div className="eyebrow">MELHORIA CONTÍNUA</div><h2>O projeto precisa aprender com o que aconteceu</h2><p>Registre decisões e testes para não repetir mudanças sem memória do motivo e do resultado.</p></div></div><Tabs items={items} value={tab} onChange={setTab}/>{tab==='decisions'&&<Decisions p={p} update={update}/>} {tab==='experiments'&&<Experiments p={p} update={update}/>} {tab==='audit'&&<Audit p={p}/>} {tab==='history'&&<History p={p}/>}</>}
+
+function Decisions({p,update}:any){const [f,setF]=useState({title:'',reason:'',action:'',metric:'CPL',status:'Planejada'});const add=()=>{if(!f.title)return;update((d:any)=>{d.decisions=[{...f,id:uid('dec'),at:new Date().toISOString()},...(d.decisions||[])]},'Decisão registrada');setF({title:'',reason:'',action:'',metric:'CPL',status:'Planejada'})};return <div className="grid2"><Card eyebrow="DIÁRIO" title="Registrar decisão"><Field label="Decisão"><input value={f.title} onChange={e=>setF({...f,title:e.target.value})} placeholder="Ex.: reduzir verba da campanha X em 20%"/></Field><Field label="Por quê"><textarea value={f.reason} onChange={e=>setF({...f,reason:e.target.value})}/></Field><Field label="O que será alterado"><textarea value={f.action} onChange={e=>setF({...f,action:e.target.value})}/></Field><div className="form2"><Field label="Métrica principal"><input value={f.metric} onChange={e=>setF({...f,metric:e.target.value})}/></Field><Field label="Status"><select value={f.status} onChange={e=>setF({...f,status:e.target.value})}><option>Planejada</option><option>Em observação</option><option>Concluída</option></select></Field></div><button className="primary full" onClick={add}>Registrar decisão</button></Card><Card eyebrow="HISTÓRICO" title="Decisões do projeto">{!p.decisions?.length?<Empty title="Nenhuma decisão registrada" text="Documente mudanças importantes para preservar o raciocínio do projeto."/>:<div className="decisionList">{p.decisions.map((d:any)=><div key={d.id}><div><b>{d.title}</b><Pill tone={d.status==='Concluída'?'green':'amber'}>{d.status}</Pill></div><p>{d.reason}</p><small>{d.action}</small></div>)}</div>}</Card></div>}
+
+function Experiments({p,update}:any){const [f,setF]=useState({name:'Gancho técnico × gancho de dor',metric:'cpl',a:48,b:39,hypothesis:'O gancho de dor reduzirá o CPL sem piorar a qualidade do lead.'});const add=()=>update((d:any)=>{d.experiments=[{...f,id:uid('exp'),at:new Date().toISOString()},...(d.experiments||[])]},'Experimento registrado');return <div className="grid2"><Card eyebrow="A/B" title="Novo experimento"><Field label="Hipótese"><input value={f.name} onChange={e=>setF({...f,name:e.target.value})}/></Field><Field label="Racional"><textarea value={f.hypothesis} onChange={e=>setF({...f,hypothesis:e.target.value})}/></Field><div className="form3"><Field label="Métrica"><select value={f.metric} onChange={e=>setF({...f,metric:e.target.value})}><option value="cpl">CPL</option><option value="ctr">CTR</option><option value="cpc">CPC</option><option value="conversion">Conversão</option></select></Field><Field label="A"><input type="number" value={f.a} onChange={e=>setF({...f,a:Number(e.target.value)})}/></Field><Field label="B"><input type="number" value={f.b} onChange={e=>setF({...f,b:Number(e.target.value)})}/></Field></div><button className="primary full" onClick={add}>Registrar teste</button></Card><Card eyebrow="RESULTADOS" title="Experimentos">{!p.experiments?.length?<Empty title="Nenhum teste ainda" text="Compare uma variável por vez para transformar opinião em aprendizado."/>:<div className="experimentList">{p.experiments.map((e:any)=>{const r=evaluateExperiment(e);return <div key={e.id}><div><b>{e.name}</b><Pill tone={r.winner==='inconclusivo'?'amber':'green'}>{r.winner==='inconclusivo'?'Inconclusivo':`Venceu ${r.winner}`}</Pill></div><p>{e.hypothesis}</p><div className="ab"><span>A <b>{e.a}</b></span><span>B <b>{e.b}</b></span><em>Δ {r.delta.toFixed(1)}%</em></div></div>})}</div>}</Card></div>}
+
+function Audit({p}:any){const h=projectHealth(p);return <><div className={`auditHero ${h.ready?'ready':''}`}><div><small>QUALITY GATE</small><h2>{h.ready?'Projeto consistente para avançar':'Ainda há pontos a estruturar'}</h2><p>O gate não “aprova marketing”. Ele verifica se os dados e artefatos essenciais existem e se estão coerentes com suas fontes atuais.</p></div><strong>{h.score}%</strong></div><div className="auditGrid">{h.checks.map((c:any)=><Card key={c.key} title={c.label} eyebrow={c.ok?'OK':'PENDENTE'} className={c.ok?'checkOk':'checkPending'}><p className="muted">Peso no fluxo: {c.weight}%</p></Card>)}</div>{h.stale.length>0&&<Card eyebrow="CONSISTÊNCIA" title="Artefatos desatualizados"><div className="staleList">{h.stale.map((x:string)=><div key={x}><Pill tone="amber">Desatualizado</Pill><b>{ENGINE_LABELS[x]||x}</b><span>Foi gerado antes de uma mudança em sua fonte. O resultado foi preservado; regenere quando fizer sentido.</span></div>)}</div></Card>}</>}
+
+function History({p}:any){return <div className="grid2"><Card eyebrow="ATIVIDADE" title="Histórico do workspace">{(p.history||[]).map((h:any,i:number)=><div className="historyItem" key={i}><span>{new Date(h.at).toLocaleString('pt-BR')}</span><b>{h.text}</b></div>)}</Card><Card eyebrow="GERAÇÕES" title="Motores executados">{!p.generations?.length?<Empty title="Sem gerações nesta versão" text="As novas execuções por OpenAI aparecerão aqui com data e modelo."/>:p.generations.map((g:any)=><div className="historyItem" key={g.id}><span>{new Date(g.at).toLocaleString('pt-BR')}</span><b>{ENGINE_LABELS[g.task]||g.task}</b><small>{g.model}</small></div>)}</Card></div>}
+
+function Settings({ai,setAI,testAI,settings,setSettings,busy}:any){const [draft,setDraft]=useState(ai);useEffect(()=>setDraft(ai),[ai]);const save=()=>{setAI({...draft,connected:false});};return <><div className="sectionIntro"><div><div className="eyebrow">SISTEMA</div><h2>Configurações claras, sem segredo escondido</h2><p>A chave da OpenAI é inserida por você. Por padrão ela fica apenas na sessão do navegador; você pode optar por lembrar neste navegador.</p></div></div><div className="grid2 settingsGrid"><Card eyebrow="OPENAI API" title="Motores de inteligência"><div className="connectionState"><div className={ai.connected?'on':ai.apiKey?'saved':''}>✦</div><div><b>{ai.connected?'Conexão validada':ai.apiKey?'Chave configurada':'Ainda não conectada'}</b><span>{ai.connected?`Modelo atual: ${ai.model}`:'Insira sua chave para ativar todos os motores do Nexus.'}</span></div></div><Field label="Chave da OpenAI" hint="A chave nunca é gravada no código ou GitHub."><input type="password" autoComplete="off" value={draft.apiKey} onChange={e=>setDraft({...draft,apiKey:e.target.value,connected:false})} placeholder="sk-..."/></Field><Field label="Modelo"><select value={draft.model} onChange={e=>setDraft({...draft,model:e.target.value,connected:false})}>{MODEL_OPTIONS.map(x=><option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></Field><div className="modelCards">{MODEL_OPTIONS.map(x=><button key={x[0]} className={draft.model===x[0]?'active':''} onClick={()=>setDraft({...draft,model:x[0],connected:false})}><b>{x[1]}</b><span>{x[2]}</span></button>)}</div><label className="remember"><input type="checkbox" checked={draft.remember} onChange={e=>setDraft({...draft,remember:e.target.checked})}/><span><b>Lembrar chave neste navegador</b><small>Desmarcado = chave some ao fechar a sessão. Marcado = fica salva no armazenamento local deste navegador.</small></span></label><div className="buttonRow"><button className="secondary" onClick={save}>Salvar configuração</button><button className="primary" disabled={!draft.apiKey||!!busy} onClick={async()=>{setAI({...draft,connected:false});await testAI({...draft,connected:false})}}>Testar conexão</button>{ai.apiKey&&<button className="dangerText" onClick={()=>{const empty={...ai,apiKey:'',connected:false,remember:false};setDraft(empty);setAI(empty)}}>Remover chave</button>}</div><div className="securityNote"><b>Como funciona</b><span>O navegador envia a chave somente para a rota segura do próprio Nexus; o servidor usa a Responses API e devolve o resultado. A chave não entra no repositório.</span></div></Card><Card eyebrow="GESTOR" title="Seu perfil padrão"><Field label="Nome"><input value={settings.managerName} onChange={e=>setSettings({...settings,managerName:e.target.value})}/></Field><Field label="Especialidade"><input value={settings.managerSpecialty} onChange={e=>setSettings({...settings,managerSpecialty:e.target.value})}/></Field><div className="form2"><Field label="Região"><input value={settings.region} onChange={e=>setSettings({...settings,region:e.target.value})}/></Field><Field label="Experiência"><select value={settings.experience} onChange={e=>setSettings({...settings,experience:e.target.value})}><option value="">Selecione</option><option>Zero (nenhum cliente)</option><option>Iniciante (1 a 2 clientes)</option><option>Intermediário (3 a 7 clientes)</option><option>Experiente (8 ou mais clientes)</option></select></Field></div><div className="form2"><Field label="Setup padrão"><input type="number" value={settings.proposalSetup} onChange={e=>setSettings({...settings,proposalSetup:Number(e.target.value)})}/></Field><Field label="Mensalidade padrão"><input type="number" value={settings.proposalMonthly} onChange={e=>setSettings({...settings,proposalMonthly:Number(e.target.value)})}/></Field></div><p className="muted">Esses dados alimentam Abordagem e Proposta, evitando repetição.</p></Card></div></>}
