@@ -52,6 +52,7 @@ function Tabs({items,value,onChange}:any){return <div className="tabs">{items.ma
 
 export default function Home(){
   const [view,setView]=useState<View>('projects');
+  const [projectOpen,setProjectOpen]=useState(false);
   const [projects,setProjects]=useState<any[]>([]); const [pid,setPid]=useState(''); const [ready,setReady]=useState(false);
   const [projectDialog,setProjectDialog]=useState(false); const [mobileMenu,setMobileMenu]=useState(false);
   const [toast,setToast]=useState(''); const [busy,setBusy]=useState<{task:string;label:string;step?:string}|null>(null);
@@ -85,6 +86,7 @@ export default function Home(){
     else if(v==='campaigns'&&(tab==='meta'||tab==='google'))v='ads';
     else if(v==='campaigns'&&tab==='planning'){v='brand';tab='brief'}
     else if(v==='prospecting'&&tab==='plan')v='plan';
+    if(v==='projects')setProjectOpen(false);else if(v!=='settings')setProjectOpen(true);
     setView(v);setMobileMenu(false);if(tab)setSub(s=>({...s,[v]:tab}));window.scrollTo({top:0,behavior:'smooth'});
   };
   const createProject=(data:any)=>{const n=projectFactory(data.name);Object.assign(n,data);setProjects(prev=>[...prev,n]);setPid(n.id);setProjectDialog(false);navigate('brand','brief');setToast('Projeto criado. Complete o briefing para começar.');};
@@ -111,17 +113,39 @@ export default function Home(){
 
   if(!ready||!p)return <div className="splash"><Image src="/nexus-logo.svg" alt="Nexus" width={68} height={68}/><div><b>Nexus Marketing IA</b><span>Organizando seu projeto...</span></div></div>;
   const health=projectHealth(p);
+  const inProject=projectOpen&&view!=='projects'&&view!=='settings';
+  const projectNav=NAV.filter(([key])=>key!=='projects'&&key!=='settings');
 
   return <div className="appShell">
     <aside id="main-menu" className={`sidebar ${mobileMenu?'mobileOpen':''}`}>
       <div className="brand"><Image src="/nexus-logo.svg" alt="Nexus Digital" width={46} height={46}/><div><b>NEXUS</b><span>MARKETING IA</span></div></div>
-      <div className="workspacePicker"><div><small>PROJETO ATIVO</small><b>{p.name}</b></div><select aria-label="Selecionar projeto" value={pid} onChange={e=>setPid(e.target.value)}>{projects.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><button onClick={()=>setProjectDialog(true)}>＋ Novo projeto</button></div>
-      <nav>{NAV.map(([key,label,icon,desc])=><button key={key} aria-current={view===key?'page':undefined} className={view===key?'active':''} onClick={()=>navigate(key)}><i>{icon}</i><span><b>{label}</b>{desc&&<small>{desc}</small>}</span>{key==='settings'&&ai.apiKey&&<em className="navDot"/>}</button>)}</nav>
-      <div className="sidebarFoot"><div className="healthMini"><span>Saúde do projeto</span><b>{health.score}%</b></div><div className="progress"><i style={{width:health.score+'%'}}/></div><small>{health.stale.length?`${health.stale.length} item(ns) desatualizado(s)`:'Base consistente'}</small></div>
+      <nav className="globalNav" aria-label="Navegação geral">
+        <button aria-current={view==='projects'?'page':undefined} aria-expanded={inProject} className={view==='projects'||inProject?'active':''} onClick={()=>navigate('projects')}><i>▦</i><span><b>Meus projetos</b></span></button>
+      </nav>
+      {inProject&&<div className="projectNavigation">
+        <div className="projectContext"><small>PROJETO ABERTO</small><b title={p.name}>{p.name}</b></div>
+        <nav aria-label={`Áreas de ${p.name}`}>
+          {projectNav.map(([key,label,icon])=><button key={key} aria-current={view===key?'page':undefined} className={view===key?'active':''} onClick={()=>navigate(key)}><i>{icon}</i><span><b>{label}</b></span></button>)}
+        </nav>
+        <div className="sidebarFoot"><div className="healthMini"><span>Estrutura do projeto</span><b>{health.score}%</b></div><div className="progress"><i style={{width:health.score+'%'}}/></div><small>{health.stale.length?`${health.stale.length} item(ns) desatualizado(s)`:'Base consistente'}</small></div>
+      </div>}
+      <nav className="globalSettings" aria-label="Configurações gerais"><button aria-current={view==='settings'?'page':undefined} className={view==='settings'?'active':''} onClick={()=>navigate('settings')}><i>⚙</i><span><b>Configurações</b></span>{ai.apiKey&&<em className="navDot"/>}</button></nav>
+
     </aside>
 
     <main className="main">
-      <header className="topbar"><button className="menuToggle iconBtn" aria-label="Abrir menu" aria-expanded={mobileMenu} aria-controls="main-menu" onClick={()=>setMobileMenu(!mobileMenu)}>☰</button><div className="topTitle"><small>Nexus Digital / {view==='projects'?'Seu portfólio':p.name}</small><h1>{NAV.find(x=>x[0]===view)?.[1]}</h1></div><div className="topActions"><button className={`aiStatus ${ai.connected?'ok':ai.apiKey?'warn':''}`} onClick={()=>navigate('settings')}><span>✦</span><div><small>OPENAI</small><b>{ai.connected?'Conectada':ai.apiKey?'Chave salva':'Conectar API'}</b></div></button><Pill tone={health.ready?'green':health.score>=50?'amber':'muted'}>{health.ready?'Projeto íntegro':`${health.score}% estruturado`}</Pill><button className="iconBtn" title="Exportar projeto" onClick={()=>downloadJSON(p)}>⇩</button></div></header>
+      <header className={`topbar ${inProject?'projectTopbar':''}`}>
+        <button className="menuToggle iconBtn" aria-label="Abrir menu" aria-expanded={mobileMenu} aria-controls="main-menu" onClick={()=>setMobileMenu(!mobileMenu)}>☰</button>
+        <div className="topTitle">
+          {inProject?<div className="projectBreadcrumb"><button onClick={()=>navigate('projects')}>Meus projetos</button><span aria-hidden="true">/</span><strong title={p.name}>{p.name}</strong></div>:<small>Nexus Digital / {view==='settings'?'Preferências gerais':'Seu portfólio'}</small>}
+          <h1>{NAV.find(x=>x[0]===view)?.[1]}</h1>
+        </div>
+        <div className="topActions">
+          {inProject&&<button className="secondary backToProjects" onClick={()=>navigate('projects')}>← Trocar projeto</button>}
+          <button className={`aiStatus ${ai.connected?'ok':ai.apiKey?'warn':''}`} onClick={()=>navigate('settings')}><span>✦</span><div><small>OPENAI</small><b>{ai.connected?'Conectada':ai.apiKey?'Chave salva':'Conectar API'}</b></div></button>
+          {inProject&&<button className="iconBtn" aria-label="Exportar projeto" title="Exportar projeto" onClick={()=>downloadJSON(p)}>⇩</button>}
+        </div>
+      </header>
 
       <div className="page">
         {!ai.apiKey&&view!=='settings'&&view!=='projects'&&<div className="apiBanner"><div><b>Ative os motores de IA</b><span>Conecte a OpenAI quando quiser gerar os materiais do projeto.</span></div><button onClick={()=>navigate('settings')}>Conectar OpenAI</button></div>}
