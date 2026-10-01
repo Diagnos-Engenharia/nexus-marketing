@@ -13,3 +13,5 @@ test('projeto vazio não recebe prontidão de briefing',()=>{const p=projectFact
 
 test('quality gate A-F',()=>{const p=projectFactory('X');const q=qualityEngine(p);assert.deepEqual(Object.keys(q.gates),['A','B','C','D','E','F']);assert.ok(q.summary.blockers>=1)});
 test('novo workspace não simula performance real',()=>{const p=projectFactory('X');assert.equal(p.performanceRows.length,0)});
+
+test('novo projeto começa em prospecção com GBP em 20% da parcela Google',()=>{const p=projectFactory('Novo');assert.equal(p.commercialStage,'prospecting');assert.equal(p.budget.amount,0);assert.equal(p.budget.gbpPct,20);assert.equal(p.mediaPlanConfirmed,false)});
