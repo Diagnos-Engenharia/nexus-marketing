@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {calcBudget,parseCSV,normalizeRows,metrics,classifySearchTerm,evaluateExperiment,projectFactory,markArtifact,artifactStatus,projectHealth,qualityEngine} from '../lib/core.js';
+import {validateGeneration} from '../lib/validation.js';
 
 test('matriz busca/micro',()=>{const x=calcBudget(1500,'busca','micro',50);assert.equal(x.google,1200);assert.equal(x.meta,300);assert.equal(x.gbp,600)});
 test('matriz híbrida/alto',()=>{const x=calcBudget(10000,'hibrido','alto',40);assert.equal(x.google,3500);assert.equal(x.meta,6500);assert.equal(x.gbp,1400)});
@@ -18,3 +19,5 @@ test('novo projeto começa em prospecção com GBP em 20% da parcela Google',()=
 
 test('fluxo de prospecção mede briefing, abordagem, plano, proposta e decisão',()=>{const p=projectFactory('Novo');let h=projectHealth(p);assert.equal(h.score,0);p.specialty='Serviço';p.niche='Público';p.location='Cidade';h=projectHealth(p);assert.equal(h.score,25);p.approach={};p.marketingPlan={};p.proposal={status:'Em negociação'};h=projectHealth(p);assert.equal(h.score,90);p.proposal.status='Fechado';p.commercialStage='won';h=projectHealth(p);assert.equal(h.checks.some(x=>x.key==='persona'),true)});
 test('GBP padrão usa 20% da parcela Google',()=>{const x=calcBudget(1000,'busca','micro');assert.equal(x.google,800);assert.equal(x.gbp,160)});
+
+test('plano de prospecção não exige persona inexistente',()=>{const data={cover:{},proposal:{},channels:[{name:'Google'}],salesFlow:{},activation:{},invitation:{},awareness:[]};assert.doesNotThrow(()=>validateGeneration('marketingPlan',data,{}));assert.throws(()=>validateGeneration('marketingPlan',data,{persona:{nome:'Teste'}}))});
