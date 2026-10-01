@@ -95,7 +95,10 @@ export default function Home(){
       const cleaned=demo?{...proj,performanceRows:[]}:proj;
       const hasManagement=!!(cleaned.persona||cleaned.content?.items?.length||cleaned.metaAds||cleaned.googleAds?.titles?.length||cleaned.performanceRows?.length);
       const inferred=cleaned.proposal?.status==='Fechado'?'won':cleaned.proposal?.status==='Declinado'?'declined':hasManagement?'won':cleaned.proposal?'proposal':'prospecting';
-      return {...cleaned,commercialStage:cleaned.commercialStage||inferred,mediaPlanConfirmed:!!cleaned.mediaPlanConfirmed,brandLogo:cleaned.brandLogo||'',brandSecondaryColor:cleaned.brandSecondaryColor||'',budget:{amount:0,demand:'busca',level:'micro',gbpPct:20,...(cleaned.budget||{})}};
+      const oldSchema=Number(cleaned.schemaVersion||0);
+      const budget={amount:0,demand:'busca',level:'micro',gbpPct:20,...(cleaned.budget||{})};
+      if(budget.gbpPct==null||(oldSchema<4&&Number(budget.gbpPct)===50))budget.gbpPct=20;
+      return {...cleaned,schemaVersion:4,commercialStage:cleaned.commercialStage||inferred,mediaPlanConfirmed:!!cleaned.mediaPlanConfirmed,brandLogo:cleaned.brandLogo||'',brandSecondaryColor:cleaned.brandSecondaryColor||'',budget};
     });
     let st:any={}; try{st=JSON.parse(localStorage.getItem(SETTINGS)||'{}')}catch{}
     const remember=!!localStorage.getItem(LOCAL_KEY); const key=localStorage.getItem(LOCAL_KEY)||sessionStorage.getItem(SESSION_KEY)||'';
@@ -109,12 +112,9 @@ export default function Home(){
   const p=projects.find(x=>x.id===pid)||projects[0];
   const update=(fn:(d:any)=>void,msg?:string)=>{setProjects(prev=>prev.map(item=>{if(item.id!==pid)return item;const d=clone(item);fn(d);d.updatedAt=new Date().toISOString();if(msg){d.history=d.history||[];d.history.unshift({at:d.updatedAt,text:msg})}return d}));if(msg)setToast(msg)};
   const navigate=(v:View,tab?:string)=>{
-    if(v==='campaigns'&&tab==='persona')v='brand';
-    else if(v==='campaigns'&&tab==='content')v='content';
-    else if(v==='campaigns'&&(tab==='meta'||tab==='google'))v='ads';
-    else if(v==='campaigns'&&tab==='planning'){v='brand';tab='brief'}
-    else if(v==='prospecting'&&tab==='plan')v='plan';
-    if(v==='home'&&lifecycle(p)!=='won')v='journey';
+    const won=lifecycle(p)==='won';
+    const postSaleOnly:View[]=['home','content','ads','campaigns','performance','calendar','readiness','learning'];
+    if(!won&&postSaleOnly.includes(v)){v='journey';tab=undefined}
     if(v==='projects')setProjectOpen(false);else if(v!=='settings')setProjectOpen(true);
     setView(v);setMobileMenu(false);if(tab)setSub(s=>({...s,[v]:tab}));window.scrollTo({top:0,behavior:'smooth'});
   };
@@ -150,7 +150,7 @@ export default function Home(){
     if(task==='googleKeywords'&&(!p.persona||!(x.adOffer||p.services||p.products)?.trim()||!x.conversionAction?.trim()||!p.location?.trim())){navigate('ads','google');setToast('Complete marca/oferta, ação, localização e persona antes de gerar Google Ads.');return}
     if(task==='approach'&&(!input.manager?.managerName?.trim()||!p.name?.trim()||!(p.specialty||p.services||p.products)?.trim())){setToast('Para a prospecção, informe seu nome e mantenha os dados básicos do prospect preenchidos.');return}
     setBusy({task,label:ENGINE_LABELS[task]||'Motor de IA'});
-    try{const snap=clone(p);const j=await callAI(task,snap,input);update(d=>applyResult(d,task,j.data),success||`${ENGINE_LABELS[task]||'Motor'} concluído`);setAI(x=>({...x,connected:true}))}catch(e:any){setToast(e.message||'Falha no motor de IA')}finally{setBusy(null)}
+    try{const snap=clone(p);const j=await callAI(task,snap,input);if(task==='proposal'){j.data.investment={setup:BRL.format(Number(input.setup)||0),monthly:BRL.format(Number(input.monthly)||0),media:String(input.media||'')}}update(d=>applyResult(d,task,j.data),success||`${ENGINE_LABELS[task]||'Motor'} concluído`);setAI(x=>({...x,connected:true}))}catch(e:any){setToast(e.message||'Falha no motor de IA')}finally{setBusy(null)}
   };
   const runEssential=async()=>{const x=p.aiInputs||{};if(!p.specialty?.trim()||!p.niche?.trim()||!x.creatorName?.trim()||!(x.adOffer||p.services||p.products)?.trim()||!(x.adDestination||p.contactDestination)?.trim()||!x.conversionAction?.trim()||!p.location?.trim()){navigate('brand','brief');setToast('Complete os dados compartilhados do projeto antes de executar a jornada IA completa.');return}if(!ai.apiKey){navigate('settings');setToast('Conecte sua chave da OpenAI antes de executar a jornada.');return}if(!confirm('Executar Persona → RETINA → Meta Ads → palavras-chave Google? Isso fará 4 chamadas à API e substituirá as versões atuais, preservando histórico.'))return;let draft=clone(p);const tasks=['persona','content','metaAds','googleKeywords'];try{for(let i=0;i<tasks.length;i++){const t=tasks[i];setBusy({task:t,label:'Jornada IA completa',step:`${i+1}/4 · ${ENGINE_LABELS[t]}`});const j=await callAI(t,draft,{});applyResult(draft,t,j.data);draft.history=draft.history||[];draft.history.unshift({at:new Date().toISOString(),text:`${ENGINE_LABELS[t]} gerado pela jornada IA`});setProjects(prev=>prev.map(x=>x.id===pid?clone(draft):x))}setToast('Jornada essencial concluída.')}catch(e:any){setToast(`Jornada interrompida: ${e.message}`)}finally{setBusy(null)}};
 

@@ -50,7 +50,7 @@ export async function POST(req:Request){
     }
     const raw=extractText(data);
     const parsed=parseJSON(raw);
-    validateGeneration(task,parsed);
+    validateGeneration(task,parsed,body.project||{});
     return NextResponse.json({ok:true,data:parsed,usage:data?.usage||null,model:data?.model||model,responseId:data?.id||null});
   }catch(error:any){
     return NextResponse.json({ok:false,error:error?.message||'Falha ao executar o motor de IA.'},{status:500});

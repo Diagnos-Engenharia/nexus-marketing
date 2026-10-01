@@ -15,3 +15,6 @@ test('quality gate A-F',()=>{const p=projectFactory('X');const q=qualityEngine(p
 test('novo workspace não simula performance real',()=>{const p=projectFactory('X');assert.equal(p.performanceRows.length,0)});
 
 test('novo projeto começa em prospecção com GBP em 20% da parcela Google',()=>{const p=projectFactory('Novo');assert.equal(p.commercialStage,'prospecting');assert.equal(p.budget.amount,0);assert.equal(p.budget.gbpPct,20);assert.equal(p.mediaPlanConfirmed,false)});
+
+test('fluxo de prospecção mede briefing, abordagem, plano, proposta e decisão',()=>{const p=projectFactory('Novo');let h=projectHealth(p);assert.equal(h.score,0);p.specialty='Serviço';p.niche='Público';p.location='Cidade';h=projectHealth(p);assert.equal(h.score,25);p.approach={};p.marketingPlan={};p.proposal={status:'Em negociação'};h=projectHealth(p);assert.equal(h.score,90);p.proposal.status='Fechado';p.commercialStage='won';h=projectHealth(p);assert.equal(h.checks.some(x=>x.key==='persona'),true)});
+test('GBP padrão usa 20% da parcela Google',()=>{const x=calcBudget(1000,'busca','micro');assert.equal(x.google,800);assert.equal(x.gbp,160)});
