@@ -83,7 +83,7 @@ export default function Home(){
   const [toast,setToast]=useState(''); const [busy,setBusy]=useState<{task:string;label:string;step?:string}|null>(null);
   const [sub,setSub]=useState<Record<string,string>>({prospecting:'approach',campaigns:'planning',performance:'overview',learning:'decisions'});
   const [ai,setAI]=useState<AIConfig>({apiKey:'',model:'gpt-5.6-terra',remember:false,connected:false});
-  const [globalSettings,setGlobalSettings]=useState<any>({agencyName:'Nexus Digital',agencyTagline:'Marketing digital para engenheiros',agencyColor:'#002e6c',agencyEmail:'',agencyWhatsapp:'',managerName:'',managerSpecialty:'Gestão de tráfego e estratégia digital',region:'',experience:'',managerClients:'',managerVacancies:'',proposalMonthly:1800,proposalSetup:600});
+  const [globalSettings,setGlobalSettings]=useState<any>({agencyName:'Nexus Digital',agencyTagline:'Marketing digital para engenheiros',agencyColor:'#002e6c',agencyEmail:'',agencyWhatsapp:'',managerName:'Nexus Digital',managerSpecialty:'Gestão de tráfego e estratégia digital',region:'',experience:'',managerClients:'',managerVacancies:'',proposalMonthly:1800,proposalSetup:600});
 
   useEffect(()=>{
     let list:any[]=[]; try{list=JSON.parse(localStorage.getItem(STORAGE)||'[]')}catch{}
@@ -218,32 +218,56 @@ export default function Home(){
 }
 
 function downloadJSON(p:any){const blob=new Blob([JSON.stringify(p,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=`nexus-${p.name.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.json`;a.click();URL.revokeObjectURL(u)}
+function ProjectFlow({p,view,sub,go}:any){
+ const won=lifecycle(p)==='won';
+ const steps=won?[
+  ['Persona',!!p.persona,'brand','persona'],
+  ['RETINA',!!p.content?.items?.length,'content',''],
+  ['Anúncios',adsReady(p),'ads','meta'],
+  ['Investimento',!!p.mediaPlanConfirmed,'campaigns','planning'],
+  ['Resultados',!!p.performanceRows?.length,'performance','overview']
+ ]:[
+  ['Briefing',briefReady(p),'brand','brief'],
+  ['Abordagem',!!p.approach,'prospecting','approach'],
+  ['Plano',!!p.marketingPlan,'plan',''],
+  ['Proposta',!!p.proposal,'prospecting','proposal'],
+  ['Decisão',['won','declined'].includes(lifecycle(p)),'prospecting','proposal']
+ ];
+ return <div className="flowRail"><div className="flowRailPhase">{won?'GESTÃO':'PROSPECÇÃO'}</div>{steps.map((s:any,i:number)=>{const unlocked=i===0||steps.slice(0,i).every((x:any)=>x[1]);const active=view===s[2]&&(!s[3]||sub[s[2]]===s[3]);return <button key={s[0]} disabled={!unlocked} className={(s[1]?'done ':'')+(active?'active':'')} onClick={()=>go(s[2],s[3]||undefined)}><span>{s[1]?'✓':i+1}</span><b>{s[0]}</b></button>})}</div>;
+}
+
 function nextAction(p:any){if(!p.specialty||!p.niche)return ['Completar briefing','A estratégia depende de uma base clara de negócio e público.','campaigns','planning'];if(!p.persona)return ['Gerar Persona','Mapeie dores, objeções e níveis de consciência.','campaigns','persona'];if(!p.content)return ['Gerar RETINA','Transforme a persona em pauta e roteiros prontos.','campaigns','content'];if(!p.metaAds||!p.googleAds)return ['Estruturar mídia','Crie os ativos de Meta e Google a partir do mesmo contexto.','campaigns','meta'];if(!p.performanceRows?.length)return ['Importar dados','Conecte performance real para fechar o ciclo.','performance','sources'];return ['Diagnosticar performance','Cruze dados, hipóteses e próximos testes.','performance','diagnostics']}
 
-function Dashboard({p,health,go,runEssential,ai}:any){const b=calcBudget(p.budget.amount,p.budget.demand,p.budget.level,p.budget.gbpPct,p.budget.googleOverride),m=metrics(p.performanceRows||[]),next=nextAction(p);return <>
-  <section className="hero"><div className="heroCopy"><div className="heroLabel">MARKETING OPERATING SYSTEM</div><h2>Seu projeto, do plano à execução.</h2><p>Acompanhe o andamento e avance para a próxima etapa.</p><div className="heroBtns"><button className="primary" onClick={()=>go(next[2],next[3])}>{next[0]} <span>→</span></button><button className="secondary" onClick={runEssential} disabled={!ai.apiKey}>✦ Executar jornada IA essencial</button></div></div><div className="heroNext"><span>PRÓXIMO PASSO RECOMENDADO</span><b>{next[0]}</b><p>{next[1]}</p><div className="scoreRing" style={{'--score':health.score} as any}><strong>{health.score}%</strong><small>estrutura</small></div></div></section>
-  <div className="metricGrid"><Metric label="Orçamento mensal" value={BRL.format(b.total)} detail={`${b.googlePct}% Google · ${b.metaPct}% Meta`}/><Metric label="Leads" value={DEC.format(m.leads)} detail={`CPL ${BRL.format(m.cpl)}`}/><Metric label="Receita atribuída" value={BRL.format(m.revenue)} detail={`ROAS ${m.roas.toFixed(2)}x`}/><Metric label="CTR" value={`${m.ctr.toFixed(1)}%`} detail={`${DEC.format(m.clicks)} cliques`}/></div>
-  <div className="grid2"><Card eyebrow="MAPA DA OPERAÇÃO" title="Onde seu projeto está"><OperationMap p={p} go={go}/></Card><Card eyebrow="PLANO DE MÍDIA" title="Distribuição recomendada"><BudgetSplit p={p}/></Card></div>
-  <Card eyebrow="ATALHOS INTELIGENTES" title="Ações que destravam o próximo nível"><div className="quickGrid"><Quick title="Jornada IA" text="Veja a sequência ideal dos motores e execute por etapa." icon="✦" onClick={()=>go('journey')}/><Quick title="Prospecção" text="Abordagem, plano de valor e proposta num mesmo fluxo." icon="↗" onClick={()=>go('prospecting')}/><Quick title="Performance" text="Importe dados reais e transforme métricas em decisões." icon="⌁" onClick={()=>go('performance')}/><Quick title="Auditoria" text="Cheque bloqueadores, avisos e artefatos desatualizados." icon="✓" onClick={()=>go('learning','audit')}/></div></Card>
+
+function Dashboard({p,health,go}:any){const b=calcBudget(p.budget.amount,p.budget.demand,p.budget.level,p.budget.gbpPct,p.budget.googleOverride),m=metrics(p.performanceRows||[]),next=nextAction(p);return <>
+  <section className="hero"><div className="heroCopy"><div className="heroLabel">CLIENTE ATIVO</div><h2>Agora o foco é executar e medir.</h2><p>O painel aparece somente depois do fechamento. Continue pelo próximo passo do projeto.</p><div className="heroBtns"><button className="primary" onClick={()=>go(next[2],next[3])}>{next[0]} <span>→</span></button><button className="secondary" onClick={()=>go('journey')}>Ver fluxo</button></div></div><div className="heroNext"><span>PRÓXIMO PASSO</span><b>{next[0]}</b><p>{next[1]}</p><div className="scoreRing" style={{'--score':health.score} as any}><strong>{health.score}%</strong><small>estrutura</small></div></div></section>
+  <div className="metricGrid"><Metric label="Orçamento mensal" value={BRL.format(b.total)} detail={b.total?(b.googlePct+'% Google · '+b.metaPct+'% Meta'):'Defina na etapa Investimento'}/><Metric label="Leads" value={DEC.format(m.leads)} detail={m.leads?('CPL '+BRL.format(m.cpl)):'Sem dados importados'}/><Metric label="Receita atribuída" value={BRL.format(m.revenue)} detail={m.revenue?('ROAS '+m.roas.toFixed(2)+'x'):'Sem dados importados'}/><Metric label="CTR" value={m.ctr.toFixed(1)+'%'} detail={m.clicks?(DEC.format(m.clicks)+' cliques'):'Sem dados importados'}/></div>
+  <div className="grid2"><Card eyebrow="FLUXO" title="Onde o projeto está"><OperationMap p={p} go={go}/></Card><Card eyebrow="INVESTIMENTO" title="Distribuição atual"><BudgetSplit p={p}/></Card></div>
 </>}
 function Quick({title,text,icon,onClick}:any){return <button className="quick" onClick={onClick}><i>{icon}</i><div><b>{title}</b><span>{text}</span></div><em>›</em></button>}
 function OperationMap({p,go}:any){const items=[['Briefing',!!(p.specialty&&p.niche),'campaigns','planning'],['Persona',!!p.persona,'campaigns','persona'],['RETINA',!!p.content,'campaigns','content'],['Mídia',!!p.metaAds&&!!p.googleAds,'campaigns','meta'],['Dados',!!p.performanceRows?.length,'performance','sources'],['Aprendizado',!!(p.decisions?.length||p.experiments?.length),'learning','decisions']];return <div className="operationMap">{items.map((x:any,i:number)=><button key={x[0]} onClick={()=>go(x[2],x[3])} className={x[1]?'done':''}><span>{x[1]?'✓':i+1}</span><b>{x[0]}</b><small>{x[1]?'concluído':'próxima ação'}</small></button>)}</div>}
 function BudgetSplit({p}:any){const b=calcBudget(p.budget.amount,p.budget.demand,p.budget.level,p.budget.gbpPct,p.budget.googleOverride);return <div className="budgetSplit"><div className="splitRow"><span>Google</span><b>{b.googlePct}% · {BRL.format(b.google)}</b></div><div className="bar"><i style={{width:b.googlePct+'%'}}/></div><div className="splitRow"><span>Meta</span><b>{b.metaPct}% · {BRL.format(b.meta)}</b></div><div className="bar meta"><i style={{width:b.metaPct+'%'}}/></div><div className="budgetMini"><div><small>GBP</small><b>{BRL.format(b.gbp)}</b></div><div><small>Google Ads</small><b>{BRL.format(b.ads)}</b></div></div><div className="tagRow">{b.campaigns.map((x:string)=><span key={x}>{x}</span>)}</div></div>}
 
-function Journey({p,health,go,run,runEssential,ai}:any){const steps=[
-  {n:1,title:'Base do negócio',desc:'Especialidade, público, oferta, localização e objetivo.',done:!!(p.specialty&&p.niche),action:()=>go('campaigns','planning'),cta:'Revisar briefing'},
-  {n:2,title:'Persona estratégica',desc:'32+ campos, objeções e 5 níveis de consciência.',done:!!p.persona,status:artifactStatus(p,'persona'),action:()=>run('persona'),cta:p.persona?'Regenerar com IA':'Gerar com IA'},
-  {n:3,title:'Conteúdo RETINA',desc:'6 peças completas: relacionamento, engajamento, transformação, 1x1, consciência e autoridade.',done:!!p.content,status:artifactStatus(p,'content'),action:()=>run('content'),cta:p.content?'Regenerar RETINA':'Gerar RETINA'},
-  {n:4,title:'Meta Ads',desc:'4 ângulos de aquisição, hooks, corpo, CTA, visual e hipótese.',done:!!p.metaAds,status:artifactStatus(p,'metaAds'),action:()=>run('metaAds'),cta:p.metaAds?'Regenerar anúncios':'Gerar Meta Ads'},
-  {n:5,title:'Google Ads',desc:'Palavras-chave, revisão e criação de títulos e descrições.',done:!!p.googleAds,status:artifactStatus(p,'googleAds'),action:()=>run('googleAds'),cta:p.googleAds?'Regenerar estrutura':'Gerar palavras-chave'},
-  {n:6,title:'Dados e tracking',desc:'UTMs, eventos e CSV de performance fecham o loop de mensuração.',done:!!p.performanceRows?.length,action:()=>go('performance','sources'),cta:'Abrir dados'},
-  {n:7,title:'Diagnóstico e aprendizado',desc:'Achados, decisões e experimentos transformam performance em melhoria contínua.',done:!!(p.optimization||p.decisions?.length),action:()=>go('performance','diagnostics'),cta:'Diagnosticar'}
-];return <>
-  <div className="sectionIntro"><div><div className="eyebrow">FLUXO GUIADO</div><h2>Jornada IA do projeto</h2><p>O sistema agora mostra dependências, status e o próximo passo. Você pode trabalhar módulo por módulo ou executar a jornada essencial automaticamente.</p></div><button className="primary" disabled={!ai.apiKey} onClick={runEssential}>✦ Gerar Persona, RETINA e anúncios</button></div>
-  <div className="journey">{steps.map((s:any)=><div className={`journeyStep ${s.done?'done':''}`} key={s.n}><div className="stepNo">{s.done?'✓':s.n}</div><div className="stepBody"><div className="stepTitle"><div><b>{s.title}</b><span>{s.desc}</span></div>{s.status&&<StatusDot status={s.status}/>}</div><button className={s.done?'secondary':'primary'} onClick={s.action}>{s.cta}</button></div></div>)}</div>
-  <Card eyebrow="QUALIDADE" title="Leitura de prontidão"><div className="healthChecks">{health.checks.map((c:any)=><div key={c.key}><span className={c.ok?'ok':''}>{c.ok?'✓':'○'}</span><b>{c.label}</b><em>{c.weight}%</em></div>)}</div></Card>
-</>}
 
+function Journey({p,go}:any){
+ const won=lifecycle(p)==='won';
+ const steps=won?[
+  {title:'Persona',done:!!p.persona,action:()=>go('brand','persona')},
+  {title:'Conteúdo RETINA',done:!!p.content?.items?.length,action:()=>go('content')},
+  {title:'Anúncios',done:adsReady(p),action:()=>go('ads','meta')},
+  {title:'Investimento',done:!!p.mediaPlanConfirmed,action:()=>go('campaigns','planning')},
+  {title:'Resultados',done:!!p.performanceRows?.length,action:()=>go('performance','overview')}
+ ]:[
+  {title:'Briefing',done:briefReady(p),action:()=>go('brand','brief')},
+  {title:'Abordagem',done:!!p.approach,action:()=>go('prospecting','approach')},
+  {title:'Plano de marketing',done:!!p.marketingPlan,action:()=>go('plan')},
+  {title:'Proposta',done:!!p.proposal,action:()=>go('prospecting','proposal')},
+  {title:'Fechado ou declinado',done:['won','declined'].includes(lifecycle(p)),action:()=>go('prospecting','proposal')}
+ ];
+ let current=steps.findIndex((x:any)=>!x.done);if(current<0)current=steps.length-1;const target=steps[current];
+ return <><section className="workflowHero"><div><small>{won?'CLIENTE ATIVO':'PROSPECÇÃO'}</small><h2>{won?'Da estratégia para a execução.':'Do primeiro briefing ao fechamento.'}</h2><p>{won?'Persona, conteúdo, anúncios, investimento e resultado.':'O Nexus abre somente a etapa que faz sentido agora.'}</p></div><button className="primary" onClick={target.action}>{'Continuar: '+target.title} →</button></section>
+ <div className="journey simpleJourney">{steps.map((s:any,i:number)=>{const unlocked=i===0||steps.slice(0,i).every((x:any)=>x.done);return <button className={'journeyStep '+(s.done?'done ':'')+(i===current?'current':'')} disabled={!unlocked} key={s.title} onClick={s.action}><div className="stepNo">{s.done?'✓':i+1}</div><div className="stepBody"><div className="stepTitle"><div><b>{s.title}</b><span>{s.done?'Concluído':i===current?'Próxima etapa':'Aguardando'}</span></div></div><em>›</em></div></button>})}</div></>;
+}
 function Prospecting({p,tab,setTab,run,settings,update}:any){
  const [channel,setChannel]=useState('WhatsApp');const [context,setContext]=useState('');
  const [commercial,setCommercial]=useState({monthly:settings.proposalMonthly||1800,setup:settings.proposalSetup||600,media:'Verba de mídia paga diretamente às plataformas'});
