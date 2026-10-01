@@ -110,7 +110,7 @@ export default function Home(){
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(''),2800);return()=>clearTimeout(t)},[toast]);
 
   const p=projects.find(x=>x.id===pid)||projects[0];
-  const update=(fn:(d:any)=>void,msg?:string)=>{setProjects(prev=>prev.map(item=>{if(item.id!==pid)return item;const d=clone(item);fn(d);d.updatedAt=new Date().toISOString();if(msg){d.history=d.history||[];d.history.unshift({at:d.updatedAt,text:msg})}return d}));if(msg)setToast(msg)};
+  const update=(fn:(d:any)=>void,msg?:string)=>{setProjects(prev=>prev.map(item=>{if(item.id!==pid)return item;const d=clone(item);fn(d);d.updatedAt=new Date().toISOString();if(msg)d.history=[{at:d.updatedAt,text:msg},...(d.history||[])].slice(0,100);return d}));if(msg)setToast(msg)};
   const navigate=(v:View,tab?:string)=>{
     const won=lifecycle(p)==='won';
     const postSaleOnly:View[]=['home','content','ads','campaigns','performance','calendar','readiness','learning'];
@@ -125,13 +125,13 @@ export default function Home(){
 
   const callAI=async(task:string,project:any,input:any={})=>{if(!ai.apiKey)throw new Error('Conecte sua chave da OpenAI em Configurações.');const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:ai.apiKey,model:ai.model,task,project,input:task==='marketingPlan'?{...input,mediaAllocation:calcBudget(project.budget?.amount,project.budget?.demand,project.budget?.level,project.budget?.gbpPct,project.budget?.googleOverride)}:input,reasoning:task==='searchTerms'?'low':'medium'})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'Falha ao executar motor');return j};
   const applyResult=(d:any,task:string,data:any)=>{
-    d.generations=d.generations||[]; d.generations.unshift({id:uid('gen'),task,at:new Date().toISOString(),model:ai.model});
-    if(task==='persona'){if(d.persona){d.personaHistory=d.personaHistory||[];d.personaHistory.unshift({data:d.persona,savedAt:new Date().toISOString()})}d.persona=data;markArtifact(d,'persona')}
+    d.generations=[{id:uid('gen'),task,at:new Date().toISOString(),model:ai.model},...(d.generations||[])].slice(0,50);
+    if(task==='persona'){if(d.persona)d.personaHistory=[{data:d.persona,savedAt:new Date().toISOString()},...(d.personaHistory||[])].slice(0,3);d.persona=data;markArtifact(d,'persona')}
     if(task==='deepDive'){d.persona=d.persona||{};d.persona.exploracao=data}
-    if(task==='content'){if(d.content){d.contentHistory=d.contentHistory||[];d.contentHistory.unshift({data:d.content,savedAt:new Date().toISOString()})}d.content={items:Array.isArray(data)?data:(data.items||[]),generatedAt:new Date().toISOString()};markArtifact(d,'content')}
-    if(task==='metaAds'){if(d.metaAds){d.metaAdsHistory=d.metaAdsHistory||[];d.metaAdsHistory.unshift({data:d.metaAds,savedAt:new Date().toISOString()})}d.metaAds=data;markArtifact(d,'metaAds')}
-    if(task==='googleKeywords'){if(d.googleAds){d.googleAdsHistory=d.googleAdsHistory||[];d.googleAdsHistory.unshift({data:d.googleAds,savedAt:new Date().toISOString()})}d.googleAds={...(d.googleAds||{}),keywords:data.keywords,selected:[],titles:[],descriptions:[],sitelinks:[],strategy:data.strategy};markArtifact(d,'googleAds')}
-    if(task==='googleAds'){if(d.googleAds){d.googleAdsHistory=d.googleAdsHistory||[];d.googleAdsHistory.unshift({data:d.googleAds,savedAt:new Date().toISOString()})}d.googleAds=data;markArtifact(d,'googleAds')}
+    if(task==='content'){if(d.content)d.contentHistory=[{data:d.content,savedAt:new Date().toISOString()},...(d.contentHistory||[])].slice(0,3);d.content={items:Array.isArray(data)?data:(data.items||[]),generatedAt:new Date().toISOString()};markArtifact(d,'content')}
+    if(task==='metaAds'){if(d.metaAds)d.metaAdsHistory=[{data:d.metaAds,savedAt:new Date().toISOString()},...(d.metaAdsHistory||[])].slice(0,3);d.metaAds=data;markArtifact(d,'metaAds')}
+    if(task==='googleKeywords'){if(d.googleAds)d.googleAdsHistory=[{data:d.googleAds,savedAt:new Date().toISOString()},...(d.googleAdsHistory||[])].slice(0,3);d.googleAds={...(d.googleAds||{}),keywords:data.keywords,selected:[],titles:[],descriptions:[],sitelinks:[],strategy:data.strategy};markArtifact(d,'googleAds')}
+    if(task==='googleAds'){if(d.googleAds)d.googleAdsHistory=[{data:d.googleAds,savedAt:new Date().toISOString()},...(d.googleAdsHistory||[])].slice(0,3);d.googleAds=data;markArtifact(d,'googleAds')}
     if(task==='approach'){d.approach=data;markArtifact(d,'approach')}
     if(task==='marketingPlan'){d.marketingPlan=data;markArtifact(d,'marketingPlan')}
     if(task==='proposal'){d.proposal={...data,status:d.proposal?.status||'Em negociação'};d.commercialStage='proposal';d.status='Proposta';markArtifact(d,'proposal')}
@@ -150,7 +150,7 @@ export default function Home(){
     if(task==='googleKeywords'&&(!p.persona||!(x.adOffer||p.services||p.products)?.trim()||!x.conversionAction?.trim()||!p.location?.trim())){navigate('ads','google');setToast('Complete marca/oferta, ação, localização e persona antes de gerar Google Ads.');return}
     if(task==='approach'&&(!input.manager?.managerName?.trim()||!p.name?.trim()||!(p.specialty||p.services||p.products)?.trim())){setToast('Para a prospecção, informe seu nome e mantenha os dados básicos do prospect preenchidos.');return}
     setBusy({task,label:ENGINE_LABELS[task]||'Motor de IA'});
-    try{const snap=clone(p);const j=await callAI(task,snap,input);if(task==='proposal'){j.data.investment={setup:BRL.format(Number(input.setup)||0),monthly:BRL.format(Number(input.monthly)||0),media:String(input.media||'')}}update(d=>applyResult(d,task,j.data),success||`${ENGINE_LABELS[task]||'Motor'} concluído`);setAI(x=>({...x,connected:true}))}catch(e:any){setToast(e.message||'Falha no motor de IA')}finally{setBusy(null)}
+    try{const snap=clone(p);const j=await callAI(task,snap,input);if(task==='proposal'){j.data.investment={setup:BRL.format(Number(input.setup)||0),monthly:BRL.format(Number(input.monthly)||0),media:String(input.media||'')}}update(d=>{if(task==='proposal')d.proposalInputs={setup:Number(input.setup)||0,monthly:Number(input.monthly)||0,media:String(input.media||'')};applyResult(d,task,j.data)},success||`${ENGINE_LABELS[task]||'Motor'} concluído`);setAI(x=>({...x,connected:true}))}catch(e:any){setToast(e.message||'Falha no motor de IA')}finally{setBusy(null)}
   };
   const runEssential=async()=>{const x=p.aiInputs||{};if(!p.specialty?.trim()||!p.niche?.trim()||!x.creatorName?.trim()||!(x.adOffer||p.services||p.products)?.trim()||!(x.adDestination||p.contactDestination)?.trim()||!x.conversionAction?.trim()||!p.location?.trim()){navigate('brand','brief');setToast('Complete os dados compartilhados do projeto antes de executar a jornada IA completa.');return}if(!ai.apiKey){navigate('settings');setToast('Conecte sua chave da OpenAI antes de executar a jornada.');return}if(!confirm('Executar Persona → RETINA → Meta Ads → palavras-chave Google? Isso fará 4 chamadas à API e substituirá as versões atuais, preservando histórico.'))return;let draft=clone(p);const tasks=['persona','content','metaAds','googleKeywords'];try{for(let i=0;i<tasks.length;i++){const t=tasks[i];setBusy({task:t,label:'Jornada IA completa',step:`${i+1}/4 · ${ENGINE_LABELS[t]}`});const j=await callAI(t,draft,{});applyResult(draft,t,j.data);draft.history=draft.history||[];draft.history.unshift({at:new Date().toISOString(),text:`${ENGINE_LABELS[t]} gerado pela jornada IA`});setProjects(prev=>prev.map(x=>x.id===pid?clone(draft):x))}setToast('Jornada essencial concluída.')}catch(e:any){setToast(`Jornada interrompida: ${e.message}`)}finally{setBusy(null)}};
 
@@ -158,7 +158,7 @@ export default function Home(){
   const health=projectHealth(p);
   const stage=lifecycle(p);
   const inProject=projectOpen&&view!=='projects'&&view!=='settings';
-  const allowed=stage==='won'?['journey','home','brand','content','ads','campaigns','performance','calendar','readiness','learning']:['journey','brand','prospecting','plan'];
+  const allowed=stage==='won'?['journey','brand','content','ads','campaigns',...(p.mediaPlanConfirmed?['home','performance','calendar','readiness','learning']:[])]:['journey','brand','prospecting','plan'];
   const projectNav=NAV.filter(([key])=>allowed.includes(key));
 
   return <div className="appShell">
@@ -271,7 +271,8 @@ function Journey({p,go}:any){
 
 function Prospecting({p,tab,setTab,run,settings,update,go}:any){
  const ai=p.aiInputs||{};const [channel,setChannel]=useState('WhatsApp');const [context,setContext]=useState(ai.planApproachContext||'');
- const [commercial,setCommercial]=useState({monthly:settings.proposalMonthly||1800,setup:settings.proposalSetup||600,media:'Verba de mídia paga diretamente às plataformas'});
+ const savedCommercial=p.proposalInputs||{};
+ const [commercial,setCommercial]=useState({monthly:savedCommercial.monthly??settings.proposalMonthly??1800,setup:savedCommercial.setup??settings.proposalSetup??600,media:savedCommercial.media||'Verba de mídia paga diretamente às plataformas'});
  const setAI=(k:string,v:any)=>update((d:any)=>{d.aiInputs={...(d.aiInputs||{}),[k]:v}});
  const items=[['approach','Abordagem'],['proposal','Proposta']];
  const manager={...settings,managerName:settings.managerName||settings.agencyName||'Nexus Digital',targetNiche:p.specialty||p.niche};
