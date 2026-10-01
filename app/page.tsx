@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import {useEffect,useState} from 'react';
 import {Projects,ProjectDialog,BrandBrief,MediaPlanning,PlanWorkspace,PersonaWorkspace,ContentWorkspace,CalendarWorkspace,Readiness,GoogleWorkspace} from '../components/workspaces';
+import {printProposal} from '../lib/print-docs.js';
 import {
   ENGINE_LABELS,artifactStatus,calcBudget,evaluateExperiment,localFindings,markArtifact,
   metrics,normalizeRows,parseCSV,projectFactory,projectHealth,qualityEngine
@@ -21,10 +22,10 @@ const uid=(p='id')=>`${p}-${Date.now()}-${Math.random().toString(36).slice(2,7)}
 
 const NAV:[View,string,string,string][]=[
   ['projects','Meus projetos','▦',''],
-  ['home','Visão geral','⌂',''],
+  ['home','Painel','⌂',''],
   ['brand','Marca e público','◉',''],
   ['plan','Plano de marketing','▤',''],
-  ['campaigns','Campanhas','◎',''],
+  ['campaigns','Investimento','◎',''],
   ['content','Conteúdo RETINA','✦',''],
   ['ads','Anúncios','↗',''],
   ['calendar','Calendário','▦',''],
@@ -32,7 +33,7 @@ const NAV:[View,string,string,string][]=[
   ['readiness','Preparar canais','✓',''],
   ['prospecting','Comercial','↗',''],
   ['learning','Aprendizados','◈',''],
-  ['journey','Jornada IA','✧',''],
+  ['journey','Fluxo do projeto','✧',''],
   ['settings','Configurações','⚙','']
 ];
 
@@ -41,6 +42,30 @@ const MODEL_OPTIONS=[
   ['gpt-5.6-terra','Terra · equilibrado','Bom equilíbrio entre qualidade e custo'],
   ['gpt-5.6-sol','Sol · máxima qualidade','Mais forte para estratégia e raciocínio']
 ];
+
+function lifecycle(p:any){
+  if(p?.commercialStage==='won'||p?.proposal?.status==='Fechado')return 'won';
+  if(p?.commercialStage==='declined'||p?.proposal?.status==='Declinado')return 'declined';
+  return p?.proposal?'proposal':'prospecting';
+}
+function briefReady(p:any){return !!(p?.name?.trim()&&p?.specialty?.trim()&&p?.niche?.trim()&&p?.location?.trim())}
+function adsReady(p:any){return !!(p?.metaAds||p?.googleAds?.titles?.length)}
+function nextRoute(p:any):[View,string?]{
+  const stage=lifecycle(p);
+  if(stage==='declined')return ['prospecting','proposal'];
+  if(stage==='won'){
+    if(!p.persona)return ['brand','persona'];
+    if(!p.content?.items?.length)return ['content'];
+    if(!adsReady(p))return ['ads','meta'];
+    if(!p.mediaPlanConfirmed)return ['campaigns','planning'];
+    return ['performance','overview'];
+  }
+  if(!briefReady(p))return ['brand','brief'];
+  if(!p.approach)return ['prospecting','approach'];
+  if(!p.marketingPlan)return ['plan'];
+  return ['prospecting','proposal'];
+}
+
 
 function Card({title,eyebrow,children,action,className=''}:any){return <section className={`card ${className}`}><div className="cardHead"><div>{eyebrow&&<div className="eyebrow">{eyebrow}</div>}{title&&<h3>{title}</h3>}</div>{action}</div>{children}</section>}
 function Pill({children,tone='blue'}:any){return <span className={`pill ${tone}`}>{children}</span>}
@@ -58,7 +83,7 @@ export default function Home(){
   const [toast,setToast]=useState(''); const [busy,setBusy]=useState<{task:string;label:string;step?:string}|null>(null);
   const [sub,setSub]=useState<Record<string,string>>({prospecting:'approach',campaigns:'planning',performance:'overview',learning:'decisions'});
   const [ai,setAI]=useState<AIConfig>({apiKey:'',model:'gpt-5.6-terra',remember:false,connected:false});
-  const [globalSettings,setGlobalSettings]=useState<any>({managerName:'',managerSpecialty:'Gestão de tráfego e estratégia digital',region:'',experience:'',managerClients:'',managerVacancies:'',proposalMonthly:1800,proposalSetup:600});
+  const [globalSettings,setGlobalSettings]=useState<any>({agencyName:'Nexus Digital',agencyTagline:'Marketing digital para engenheiros',agencyColor:'#002e6c',agencyEmail:'',agencyWhatsapp:'',managerName:'',managerSpecialty:'Gestão de tráfego e estratégia digital',region:'',experience:'',managerClients:'',managerVacancies:'',proposalMonthly:1800,proposalSetup:600});
 
   useEffect(()=>{
     let list:any[]=[]; try{list=JSON.parse(localStorage.getItem(STORAGE)||'[]')}catch{}
@@ -67,7 +92,10 @@ export default function Home(){
     list=list.map((proj:any)=>{
       const rows=proj.performanceRows||[];
       const demo=rows.length===4 && ['Google Search | Vistoria','Meta | Diagnóstico','Google Search | Laudos','Meta | Remarketing'].every(name=>rows.some((r:any)=>r.campaign===name));
-      return demo?{...proj,performanceRows:[]}:proj;
+      const cleaned=demo?{...proj,performanceRows:[]}:proj;
+      const hasManagement=!!(cleaned.persona||cleaned.content?.items?.length||cleaned.metaAds||cleaned.googleAds?.titles?.length||cleaned.performanceRows?.length);
+      const inferred=cleaned.proposal?.status==='Fechado'?'won':cleaned.proposal?.status==='Declinado'?'declined':hasManagement?'won':cleaned.proposal?'proposal':'prospecting';
+      return {...cleaned,commercialStage:cleaned.commercialStage||inferred,mediaPlanConfirmed:!!cleaned.mediaPlanConfirmed,brandLogo:cleaned.brandLogo||'',brandSecondaryColor:cleaned.brandSecondaryColor||'',budget:{amount:0,demand:'busca',level:'micro',gbpPct:20,...(cleaned.budget||{})}};
     });
     let st:any={}; try{st=JSON.parse(localStorage.getItem(SETTINGS)||'{}')}catch{}
     const remember=!!localStorage.getItem(LOCAL_KEY); const key=localStorage.getItem(LOCAL_KEY)||sessionStorage.getItem(SESSION_KEY)||'';
@@ -86,10 +114,12 @@ export default function Home(){
     else if(v==='campaigns'&&(tab==='meta'||tab==='google'))v='ads';
     else if(v==='campaigns'&&tab==='planning'){v='brand';tab='brief'}
     else if(v==='prospecting'&&tab==='plan')v='plan';
+    if(v==='home'&&lifecycle(p)!=='won')v='journey';
     if(v==='projects')setProjectOpen(false);else if(v!=='settings')setProjectOpen(true);
     setView(v);setMobileMenu(false);if(tab)setSub(s=>({...s,[v]:tab}));window.scrollTo({top:0,behavior:'smooth'});
   };
-  const createProject=(data:any)=>{const n=projectFactory(data.name);Object.assign(n,data);setProjects(prev=>[...prev,n]);setPid(n.id);setProjectDialog(false);navigate('brand','brief');setToast('Projeto criado. Complete o briefing para começar.');};
+  const openProject=(id:string)=>{const proj=projects.find(x=>x.id===id);if(!proj)return;const [v,t]=nextRoute(proj);setPid(id);setProjectOpen(true);setView(v);if(t)setSub(s=>({...s,[v]:t}));setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'});};
+  const createProject=(data:any)=>{const n=projectFactory(data.name);Object.assign(n,data,{commercialStage:'prospecting',status:'Prospecção'});setProjects(prev=>[...prev,n]);setPid(n.id);setProjectDialog(false);setProjectOpen(true);setView('brand');setSub(s=>({...s,brand:'brief'}));setToast('Projeto criado. Comece pelo briefing.');window.scrollTo({top:0,behavior:'smooth'});};
   const saveAIKey=(cfg:AIConfig)=>{localStorage.removeItem(LOCAL_KEY);sessionStorage.removeItem(SESSION_KEY);if(cfg.apiKey){if(cfg.remember)localStorage.setItem(LOCAL_KEY,cfg.apiKey);else sessionStorage.setItem(SESSION_KEY,cfg.apiKey)}setAI(cfg)};
   const testAI=async(cfg=ai)=>{if(!cfg.apiKey){setToast('Informe a chave da OpenAI.');return false}setBusy({task:'health',label:'Testando conexão com OpenAI'});try{const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:cfg.apiKey,model:cfg.model,task:'health',project:p,reasoning:'low'})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'Falha de conexão');const next={...cfg,connected:true,lastTest:new Date().toISOString()};saveAIKey(next);setToast('OpenAI conectada com sucesso.');return true}catch(e:any){setAI(x=>({...x,connected:false}));setToast(e.message||'Não foi possível conectar.');return false}finally{setBusy(null)}};
 
@@ -104,13 +134,16 @@ export default function Home(){
     if(task==='googleAds'){if(d.googleAds){d.googleAdsHistory=d.googleAdsHistory||[];d.googleAdsHistory.unshift({data:d.googleAds,savedAt:new Date().toISOString()})}d.googleAds=data;markArtifact(d,'googleAds')}
     if(task==='approach'){d.approach=data;markArtifact(d,'approach')}
     if(task==='marketingPlan'){d.marketingPlan=data;markArtifact(d,'marketingPlan')}
-    if(task==='proposal'){d.proposal={...data,status:d.proposal?.status||'Follow UP'};markArtifact(d,'proposal')}
+    if(task==='proposal'){d.proposal={...data,status:d.proposal?.status||'Em negociação'};d.commercialStage='proposal';d.status='Proposta';markArtifact(d,'proposal')}
     if(task==='searchTerms'){d.searchTermClassifications=data}
     if(task==='optimization'){d.optimization=data;markArtifact(d,'optimization')}
   };
   const runEngine=async(task:string,input:any={},success?:string)=>{
     if(!ai.apiKey){navigate('settings');setToast('Conecte sua chave da OpenAI para ativar este motor.');return}
     const x=p.aiInputs||{};
+    if(['persona','deepDive','content','metaAds','googleKeywords','googleAds'].includes(task)&&lifecycle(p)!=='won'){navigate('prospecting','proposal');setToast('Conclua o fechamento antes de iniciar a gestão de marketing.');return}
+    if(task==='marketingPlan'&&!p.approach){navigate('prospecting','approach');setToast('Gere a abordagem antes do plano de marketing.');return}
+    if(task==='proposal'&&!p.marketingPlan){navigate('plan');setToast('Gere o plano de marketing antes da proposta.');return}
     if(task==='persona'&&!p.niche?.trim()){navigate('brand','brief');setToast('Informe o nicho/público antes de gerar a persona.');return}
     if(task==='content'&&(!x.creatorName?.trim()||!p.niche?.trim()||!p.persona)){navigate('content');setToast('Complete responsável, nicho e persona antes de gerar o RETINA.');return}
     if(task==='metaAds'&&(!p.persona||!(x.adOffer||p.offers||p.services||p.products)?.trim()||!(x.adDestination||p.contactDestination)?.trim()||!x.conversionAction?.trim())){navigate('ads','meta');setToast('Complete oferta, destino, ação desejada e persona antes de gerar Meta Ads.');return}
@@ -123,8 +156,10 @@ export default function Home(){
 
   if(!ready||!p)return <div className="splash"><Image src="/nexus-logo.svg" alt="Nexus" width={68} height={68}/><div><b>Nexus Marketing IA</b><span>Organizando seu projeto...</span></div></div>;
   const health=projectHealth(p);
+  const stage=lifecycle(p);
   const inProject=projectOpen&&view!=='projects'&&view!=='settings';
-  const projectNav=NAV.filter(([key])=>key!=='projects'&&key!=='settings');
+  const allowed=stage==='won'?['journey','home','brand','content','ads','campaigns','performance','calendar','readiness','learning']:['journey','brand','prospecting','plan'];
+  const projectNav=NAV.filter(([key])=>allowed.includes(key));
 
   return <div className="appShell">
     <aside id="main-menu" className={`sidebar ${mobileMenu?'mobileOpen':''}`}>
@@ -151,7 +186,7 @@ export default function Home(){
           <h1>{NAV.find(x=>x[0]===view)?.[1]}</h1>
         </div>
         <div className="topActions">
-          {inProject&&<button className="secondary backToProjects" onClick={()=>navigate('projects')}>← Trocar projeto</button>}
+          {inProject&&<span className={`pill ${stage==='won'?'green':stage==='declined'?'red':'blue'}`}>{stage==='won'?'Cliente ativo':stage==='declined'?'Declinado':'Prospecção'}</span>}{inProject&&<button className="secondary backToProjects" onClick={()=>navigate('projects')}>← Projetos</button>}
           <button className={`aiStatus ${ai.connected?'ok':ai.apiKey?'warn':''}`} onClick={()=>navigate('settings')}><span>✦</span><div><small>OPENAI</small><b>{ai.connected?'Conectada':ai.apiKey?'Chave salva':'Conectar API'}</b></div></button>
           {inProject&&<button className="iconBtn" aria-label="Exportar projeto" title="Exportar projeto" onClick={()=>downloadJSON(p)}>⇩</button>}
         </div>
@@ -159,17 +194,18 @@ export default function Home(){
 
       <div className="page">
         {!ai.apiKey&&view!=='settings'&&view!=='projects'&&<div className="apiBanner"><div><b>Ative os motores de IA</b><span>Conecte a OpenAI quando quiser gerar os materiais do projeto.</span></div><button onClick={()=>navigate('settings')}>Conectar OpenAI</button></div>}
-        {view==='projects'&&<Projects projects={projects} open={(id:string)=>{setPid(id);navigate('home')}} create={()=>setProjectDialog(true)}/>}
-        {view==='brand'&&<><Tabs items={[["brief","Briefing da marca"],["persona","Personas e consciência"]]} value={sub.brand||'brief'} onChange={(t:string)=>setSub(x=>({...x,brand:t}))}/>{sub.brand==='persona'?<PersonaWorkspace key={pid} p={p} update={update} run={runEngine}/>:<BrandBrief p={p} update={update}/>}</>}
-        {view==='plan'&&<PlanWorkspace key={pid} p={p} update={update} run={runEngine}/>}
-        {view==='content'&&<ContentWorkspace key={pid} p={p} update={update} run={runEngine}/>}
+        {inProject&&<ProjectFlow p={p} view={view} sub={sub} go={navigate}/>}
+        {view==='projects'&&<Projects projects={projects} open={openProject} create={()=>setProjectDialog(true)}/>}
+        {view==='brand'&&(stage==='won'?<><Tabs items={[["brief","Empresa"],["persona","Persona"]]} value={sub.brand||'persona'} onChange={(t:string)=>setSub(x=>({...x,brand:t}))}/>{(sub.brand||'persona')==='persona'?<PersonaWorkspace key={pid} p={p} update={update} run={runEngine} onContinue={()=>navigate('content')}/>:<BrandBrief p={p} update={update} onContinue={()=>navigate('brand','persona')}/>}</>:<BrandBrief p={p} update={update} onContinue={()=>navigate('prospecting','approach')}/>)}
+        {view==='plan'&&<PlanWorkspace key={pid} p={p} update={update} run={runEngine} settings={globalSettings} onContinue={()=>navigate('prospecting','proposal')}/>}
+        {view==='content'&&<ContentWorkspace key={pid} p={p} update={update} run={runEngine} onContinue={()=>navigate('ads','meta')}/>}
         {view==='calendar'&&<CalendarWorkspace key={pid} p={p} update={update}/>}
         {view==='readiness'&&<Readiness p={p} update={update}/>}
-        {view==='ads'&&<><Tabs items={[["meta","Meta Ads"],["google","Google Ads"]]} value={sub.ads||'meta'} onChange={(t:string)=>setSub(x=>({...x,ads:t}))}/>{sub.ads==='google'?<GoogleWorkspace key={pid} p={p} update={update} run={runEngine}/>:<MetaAds p={p} update={update} run={runEngine}/>}</>}
+        {view==='ads'&&<><Tabs items={[["meta","Meta · despertar interesse"],["google","Google · quem já procura"]]} value={sub.ads||'meta'} onChange={(t:string)=>setSub(x=>({...x,ads:t}))}/>{sub.ads==='google'?<GoogleWorkspace key={pid} p={p} update={update} run={runEngine}/>:<MetaAds p={p} update={update} run={runEngine}/>} {adsReady(p)&&<div className="flowFooter"><div><b>Anúncios prontos para testar</b><span>Agora defina quanto investir em cada canal.</span></div><button className="primary" onClick={()=>navigate('campaigns','planning')}>Continuar para investimento →</button></div>}</>}
         {view==='home'&&<Dashboard p={p} health={health} go={navigate} runEssential={runEssential} ai={ai}/>}
         {view==='journey'&&<Journey p={p} health={health} go={navigate} run={runEngine} runEssential={runEssential} ai={ai}/>}
-        {view==='prospecting'&&<Prospecting key={pid} p={p} tab={sub.prospecting} setTab={(v:string)=>setSub(s=>({...s,prospecting:v}))} run={runEngine} settings={globalSettings} update={update}/>}
-        {view==='campaigns'&&<><Tabs items={[["planning","Plano de mídia"],["tracking","Mensuração"]]} value={sub.campaigns==='tracking'?'tracking':'planning'} onChange={(t:string)=>setSub(x=>({...x,campaigns:t}))}/>{sub.campaigns==='tracking'?<Tracking p={p} update={update}/>:<MediaPlanning p={p} update={update}/>}</>}
+        {view==='prospecting'&&<Prospecting key={pid} p={p} tab={sub.prospecting} setTab={(v:string)=>setSub(s=>({...s,prospecting:v}))} run={runEngine} settings={globalSettings} update={update} go={navigate}/>}
+        {view==='campaigns'&&<MediaPlanning p={p} update={update} onContinue={()=>navigate('performance','overview')}/>} 
         {view==='performance'&&<Performance key={pid} p={p} tab={sub.performance} setTab={(v:string)=>setSub(s=>({...s,performance:v}))} run={runEngine} update={update}/>}
         {view==='learning'&&<Learning key={pid} p={p} tab={sub.learning} setTab={(v:string)=>setSub(s=>({...s,learning:v}))} update={update}/>}
         {view==='settings'&&<Settings ai={ai} setAI={saveAIKey} testAI={testAI} settings={globalSettings} setSettings={setGlobalSettings} busy={busy}/>}
