@@ -108,3 +108,23 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 @media(max-width:900px){.requirementGrid{grid-template-columns:1fr 1fr}.planPage{grid-template-columns:42px minmax(0,1fr);gap:12px;padding:18px}.planPageNo{width:38px;height:38px}.planRows>div{grid-template-columns:1fr}.planFacts,.activationGrid{grid-template-columns:1fr 1fr}.planChannelGrid{grid-template-columns:1fr}}
 @media(max-width:600px){.requirementGrid,.planFacts,.activationGrid{grid-template-columns:1fr}.planPage{display:block}.planPageNo{margin-bottom:12px}.salesFlow{display:grid}.planActions{align-items:flex-start;flex-direction:column}}
+
+
+/* Guided lifecycle */
+.flowRail{display:grid;grid-template-columns:auto repeat(5,minmax(90px,1fr));gap:6px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px;margin-bottom:16px;box-shadow:0 4px 14px rgba(29,50,79,.03)}
+.flowRailPhase{font-size:10px;letter-spacing:.13em;font-weight:900;color:var(--muted);padding:0 8px}
+.flowRail button{border:0;background:#f7f9fc;border-radius:10px;padding:8px;display:flex;align-items:center;gap:7px;color:#7a8798;text-align:left}
+.flowRail button span{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:#e9eef5;font-size:11px;font-weight:900;flex:0 0 22px}
+.flowRail button b{font-size:12px}.flowRail button.done{color:var(--green);background:#f6fcf9}.flowRail button.done span{background:var(--greenbg);color:var(--green)}
+.flowRail button.active{outline:2px solid #b9d8ff;background:#eff6ff;color:#175b9f}.flowRail button:disabled{opacity:.45}
+.flowFooter{position:sticky;bottom:12px;z-index:8;margin-top:16px;background:rgba(255,255,255,.96);backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:0 14px 35px rgba(21,55,93,.12);display:flex;align-items:center;justify-content:space-between;gap:14px}
+.flowFooter b{display:block;font-size:14px}.flowFooter span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.workflowHero{display:flex;align-items:center;justify-content:space-between;gap:18px;background:linear-gradient(135deg,#082249,#0c3264);color:#fff;border-radius:18px;padding:24px;margin-bottom:14px}
+.workflowHero small{font-size:10px;letter-spacing:.15em;color:#83bfff;font-weight:900}.workflowHero h2{font-size:25px;margin:5px 0}.workflowHero p{font-size:14px;color:#bfd1e7;margin:0}
+.simpleJourney{gap:7px}.simpleJourney .journeyStep{width:100%;cursor:pointer;text-align:left}.simpleJourney .journeyStep.current{border-color:#9cc8f9;background:#f6faff}.simpleJourney .journeyStep em{font-style:normal;color:#8fa0b5;font-size:22px}
+.brandIdentityRow{display:grid;grid-template-columns:100px 1fr;gap:12px;align-items:center}.brandLogoPreview{width:96px;height:76px;border:1px dashed #c9d5e3;background:#f8fafc;border-radius:12px;display:grid;place-items:center;overflow:hidden;color:#8a98aa;font-size:11px;font-weight:900}.brandLogoPreview img{width:100%;height:100%;object-fit:contain;padding:8px}.planClientLogo{max-width:170px;max-height:76px;object-fit:contain;margin:0 0 10px}
+.matrixSummary{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}.matrixSummary span{border:1px solid var(--line);background:#f8fafc;border-radius:10px;padding:10px;font-size:12px;color:var(--muted)}.matrixSummary b{display:block;font-size:17px;color:var(--text);margin-top:3px}
+.providerMini{border:1px solid #d8e5f5;background:#f6faff;border-radius:12px;padding:12px;margin-bottom:12px}.providerMini b{display:block;font-size:16px;color:#123f76}.providerMini span{display:block;font-size:12px;color:#5b708c;margin-top:3px}.providerMini small{display:block;font-size:11px;color:#8190a2;margin-top:5px}
+.decisionButtons{display:grid;grid-template-columns:1fr 1fr;gap:10px}.successButton,.declineButton{border-radius:11px;padding:12px;font-size:14px;font-weight:900;border:1px solid}.successButton{background:var(--greenbg);border-color:#b9e5d6;color:var(--green)}.declineButton{background:var(--redbg);border-color:#efc8ce;color:var(--red)}
+@media(max-width:950px){.flowRail{grid-template-columns:1fr;overflow:hidden}.flowRailPhase{display:none}.flowRail button{display:none}.flowRail button.active,.flowRail button.done:last-of-type{display:flex}.matrixSummary{grid-template-columns:1fr 1fr}.workflowHero{align-items:flex-start;flex-direction:column}}
+@media(max-width:600px){.flowFooter{position:static;align-items:stretch;flex-direction:column}.flowFooter .primary{width:100%}.brandIdentityRow{grid-template-columns:1fr}.matrixSummary,.decisionButtons{grid-template-columns:1fr}}
