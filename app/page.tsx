@@ -274,8 +274,8 @@ function Prospecting({p,tab,setTab,run,settings,update,go}:any){
  const [commercial,setCommercial]=useState({monthly:settings.proposalMonthly||1800,setup:settings.proposalSetup||600,media:'Verba de mídia paga diretamente às plataformas'});
  const setAI=(k:string,v:any)=>update((d:any)=>{d.aiInputs={...(d.aiInputs||{}),[k]:v}});
  const items=[['approach','Abordagem'],['proposal','Proposta']];
- const manager={...settings,targetNiche:p.specialty||p.niche};
- const ready=!!(settings.managerName?.trim()&&p.name?.trim()&&(p.specialty||p.services||p.products)?.trim());
+ const manager={...settings,managerName:settings.managerName||settings.agencyName||'Nexus Digital',targetNiche:p.specialty||p.niche};
+ const ready=!!((settings.managerName||settings.agencyName||'Nexus Digital').trim()&&p.name?.trim()&&(p.specialty||p.services||p.products)?.trim());
  const decide=(status:string)=>{update((d:any)=>{d.proposal={...(d.proposal||{}),status};d.commercialStage=status==='Fechado'?'won':'declined';d.status=status==='Fechado'?'Ativo':'Declinado'},status==='Fechado'?'Cliente fechado. Gestão liberada.':'Proposta marcada como declinada.');if(status==='Fechado')go('brand','persona');else go('projects')};
  return <>
   <div className="sectionIntro"><div><div className="eyebrow">{tab==='approach'?'ETAPA 2 DE 5 · PROSPECÇÃO':'ETAPA 4 E 5 DE 5 · PROSPECÇÃO'}</div><h2>{tab==='approach'?'Prepare uma abordagem específica para esta empresa.':'Transforme o plano em proposta e registre a decisão.'}</h2></div></div><Tabs items={items} value={tab} onChange={setTab}/>
