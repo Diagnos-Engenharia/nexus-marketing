@@ -211,7 +211,7 @@ function Journey({p,health,go,run,runEssential,ai}:any){const steps=[
 function Prospecting({p,tab,setTab,run,settings,update}:any){
  const [channel,setChannel]=useState('WhatsApp');const [context,setContext]=useState('');
  const [commercial,setCommercial]=useState({monthly:settings.proposalMonthly||1800,setup:settings.proposalSetup||600,media:'Verba de mídia paga diretamente às plataformas'});
- const ai=p.aiInputs||{};const setAI=(k:string,v:any)=>update((d:any)=>{d.aiInputs={...(d.aiInputs||{}),[k]:v});
+ const ai=p.aiInputs||{};const setAI=(k:string,v:any)=>update((d:any)=>{d.aiInputs={...(d.aiInputs||{}),[k]:v}});
  const items=[['approach','Abordagem'],['proposal','Proposta']];
  const ready=!!(settings.managerName?.trim()&&p.name?.trim()&&(p.specialty||p.services||p.products)?.trim());
  const manager={...settings,targetNiche:p.specialty||p.niche};
@@ -233,7 +233,7 @@ function ProposalResult({data}:any){return <div className="document proposalDoc"
 function DocList({title,items}:any){if(!items?.length)return null;return <div className="docList"><h4>{title}</h4><ul>{items.map((x:string,i:number)=><li key={i}>{x}</li>)}</ul></div>}
 
 function MetaAds({p,update,run}:any){
- const status=artifactStatus(p,'metaAds');const ai=p.aiInputs||{};const setAI=(k:string,v:any)=>update((d:any)=>{d.aiInputs={...(d.aiInputs||{}),[k]:v});
+ const status=artifactStatus(p,'metaAds');const ai=p.aiInputs||{};const setAI=(k:string,v:any)=>update((d:any)=>{d.aiInputs={...(d.aiInputs||{}),[k]:v}});
  const ready=!!(p.persona&&(ai.adOffer||p.offers||p.services||p.products)?.trim()&&(ai.adDestination||p.contactDestination)?.trim()&&ai.conversionAction?.trim());
  return <><div className="sectionIntro"><div><div className="eyebrow">ANÚNCIOS / META</div><h2>Oferta + destino + ação + persona.</h2><p>O motor só gera os quatro anúncios quando as quatro respostas exigidas pelo prompt estiverem disponíveis.</p></div><button className="primary" disabled={!ready} onClick={()=>run('metaAds')}>✦ {p.metaAds?'Regenerar 4 anúncios':'Gerar 4 anúncios'}</button></div>
  <Card eyebrow="ANTES DE GERAR" title="Informações obrigatórias"><Field label="O que você está anunciando"><textarea value={ai.adOffer||''} onChange={e=>setAI('adOffer',e.target.value)} placeholder={p.offers||p.services||'Descreva produto, serviço, oferta ou evento com detalhes.'}/></Field><div className="form2"><Field label="Destino após o clique"><input value={ai.adDestination||p.contactDestination||''} onChange={e=>setAI('adDestination',e.target.value)} placeholder="WhatsApp, página, formulário..."/></Field><Field label="Ação desejada no destino"><input value={ai.conversionAction||''} onChange={e=>setAI('conversionAction',e.target.value)} placeholder="Enviar mensagem, pedir orçamento..."/></Field></div><div className="requirementGrid"><div className={(ai.adOffer||p.offers||p.services||p.products)?'ready':'missing'}><span>{(ai.adOffer||p.offers||p.services||p.products)?'✓':'○'}</span><b>Oferta detalhada</b></div><div className={(ai.adDestination||p.contactDestination)?'ready':'missing'}><span>{(ai.adDestination||p.contactDestination)?'✓':'○'}</span><b>Destino</b></div><div className={ai.conversionAction?'ready':'missing'}><span>{ai.conversionAction?'✓':'○'}</span><b>Ação</b></div><div className={p.persona?'ready':'missing'}><span>{p.persona?'✓':'○'}</span><b>Persona</b></div></div></Card>
