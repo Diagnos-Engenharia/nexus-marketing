@@ -34,3 +34,16 @@ npm run dev
 ```
 
 Não depende de GitHub Actions. A Vercel recebe commits pela integração GitHub existente.
+
+
+## Fluxo operacional
+
+O Nexus separa o ciclo do projeto em duas fases para evitar telas sem contexto:
+
+**Prospecção:** Briefing → Abordagem → Plano de marketing → Proposta → Fechado/Declinado.
+
+**Cliente ativo:** Persona → Conteúdo RETINA → Meta ou Google Ads → Distribuição de investimento → Resultados.
+
+Projetos novos começam no briefing, sem dashboard. O painel de gestão só é liberado após a proposta ser marcada como **Fechado**. Plano de marketing e proposta possuem exportação para PDF pelo diálogo de impressão do navegador.
+
+Na matriz de investimento, a presença local/GBP começa em **20% da parcela destinada ao Google**. O valor pode ser ajustado nas opções avançadas.
