@@ -73,7 +73,7 @@ export function PlanWorkspace({p,update,run,onContinue,settings}:any){
   ['Destinatário',!!(ai.planRecipientProfile||ai.decisionMakerContext||ai.prospectOwner)?.toString().trim()],
   ['Identidade',!!(p.brandLogo||p.brandColor)],
   ['Condições conhecidas',!!(ai.operationalDetails||p.offers)?.toString().trim()],
-  ['Contato para assinatura',!!((ai.signerName||'').trim()&&(ai.signerWhatsapp||'').trim())]
+  ['Contato para assinatura',!!((ai.signerName||settings?.managerName||'').trim()&&(ai.signerWhatsapp||settings?.agencyWhatsapp||'').trim())]
  ];
  const page=(n:string,title:string,children:any)=><section className="planPage"><div className="planPageNo">{n}</div><div><small>PLANO DE MARKETING</small><h3>{title}</h3>{children}</div></section>;
  return <><Intro tag="ETAPA 3 DE 5 · PROSPECÇÃO" title="Transforme o diagnóstico em um plano apresentável." text="O Nexus usa o briefing e a abordagem. Complete somente o contexto comercial que ainda falta." action={<button className="primary" onClick={()=>run('marketingPlan',{context:p.planContext,manager:settings})}>✦ {data?'Gerar nova versão':'Gerar plano'}</button>}/>
