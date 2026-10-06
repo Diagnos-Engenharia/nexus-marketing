@@ -54,4 +54,15 @@ O Nexus separa o ciclo do projeto em duas fases para evitar telas sem contexto:
 
 Projetos novos começam no briefing, sem dashboard. O painel de gestão só é liberado após a proposta ser marcada como **Fechado**. Plano de marketing e proposta possuem exportação para PDF pelo diálogo de impressão do navegador.
 
+## Menu do projeto
+
+O menu lateral do projeto tem dois grupos:
+
+- **Prospecção** (sempre ativa): Persona, Marca e público, Plano de marketing, Comercial e Fluxo do projeto.
+- **Gestão** (libera depois que a proposta é marcada como **Fechado**): Conteúdo RETINA, Anúncios (Meta e Google), Investimento e, depois de confirmar o investimento, Painel, Resultados, Calendário, Preparar canais e Aprendizados. Antes do fechamento os itens aparecem travados, com a dica de quando liberam.
+
+A **Persona** fica em Prospecção: um clique em **Criar persona** gera a pesquisa completa, na ordem do prompt do curso (retrato, problema e obstáculo, emoções e medos, passado, decisão de compra e os 5 níveis de consciência), tudo aberto na tela, com edição, cópia e o aprofundamento de medos, dores, desejos e objeções.
+
+Em **Investimento**, a matriz mostra as 9 combinações (3 cenários × 3 faixas) e destaca a do projeto. Em **Anúncios**, o Meta tem o passo opcional dos **20 ganchos extras** e o Google traz as listas prontas para copiar (uma por linha).
+
 Na matriz de investimento, a presença local/GBP começa em **20% da parcela destinada ao Google**. O valor pode ser ajustado nas opções avançadas.

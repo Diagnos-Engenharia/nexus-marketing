@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import {useEffect,useRef,useState} from 'react';
-import {Projects,ProjectDialog,BrandBrief,MediaPlanning,PlanWorkspace,PersonaWorkspace,ContentWorkspace,CalendarWorkspace,Readiness,GoogleWorkspace} from '../components/workspaces';
+import {Projects,ProjectDialog,BrandBrief,MediaPlanning,PlanWorkspace,PersonaWorkspace,ContentWorkspace,CalendarWorkspace,Readiness,GoogleWorkspace,CopyBlock} from '../components/workspaces';
 import {PreflightDialog,JourneyDialog,UsageCard,EngineErrorBanner} from '../components/engine-ui';
 import {printProposal} from '../lib/print-docs.js';
 import {
@@ -13,7 +13,7 @@ import {
   adsReady,briefReady,journeyResumePoint,journeySteps,lifecycle,newJourneyRun,nextStep,preflight,preflightJourney
 } from '../lib/journey.js';
 
-type View='projects'|'brand'|'plan'|'content'|'ads'|'calendar'|'readiness'|'home'|'journey'|'prospecting'|'campaigns'|'performance'|'learning'|'settings';
+type View='projects'|'brand'|'persona'|'plan'|'content'|'ads'|'calendar'|'readiness'|'home'|'journey'|'prospecting'|'campaigns'|'performance'|'learning'|'settings';
 type AIConfig={apiKey:string;model:string;remember:boolean;connected:boolean;lastTest?:string};
 const BRL=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
 const DEC=new Intl.NumberFormat('pt-BR',{maximumFractionDigits:1});
@@ -28,6 +28,7 @@ const NAV:[View,string,string,string][]=[
   ['projects','Meus projetos','▦',''],
   ['home','Painel','⌂',''],
   ['brand','Marca e público','◉',''],
+  ['persona','Persona','◍',''],
   ['plan','Plano de marketing','▤',''],
   ['campaigns','Investimento','◎',''],
   ['content','Conteúdo RETINA','✦',''],
@@ -40,6 +41,13 @@ const NAV:[View,string,string,string][]=[
   ['journey','Fluxo do projeto','✧',''],
   ['settings','Configurações','⚙','']
 ];
+
+// Menu do projeto em dois grupos. Prospecção fica sempre ativa; Gestão libera depois do fechamento.
+const NAV_GROUPS:{key:string;label:string;items:View[]}[]=[
+  {key:'prospeccao',label:'Prospecção',items:['persona','brand','plan','prospecting','journey']},
+  {key:'gestao',label:'Gestão',items:['content','ads','campaigns','home','performance','calendar','readiness','learning']}
+];
+const AFTER_INVESTMENT:View[]=['home','performance','calendar','readiness','learning'];
 
 const MODEL_OPTIONS=[
   ['gpt-5.6-luna','Luna · econômico','Alto volume e menor custo'],
@@ -126,6 +134,7 @@ export default function Home(){
     if(task==='deepDive'){d.persona=d.persona||{};d.persona.exploracao=data}
     if(task==='content'){if(d.content)d.contentHistory=[{data:d.content,savedAt:new Date().toISOString()},...(d.contentHistory||[])].slice(0,3);d.content={items:Array.isArray(data)?data:(data.items||[]),generatedAt:new Date().toISOString()};markArtifact(d,'content')}
     if(task==='metaAds'){if(d.metaAds)d.metaAdsHistory=[{data:d.metaAds,savedAt:new Date().toISOString()},...(d.metaAdsHistory||[])].slice(0,3);d.metaAds=data;markArtifact(d,'metaAds')}
+    if(task==='extraHooks'){d.metaAds={...(d.metaAds||{}),extraHooks:{...data,generatedAt:new Date().toISOString()}}}
     if(task==='googleKeywords'){if(d.googleAds)d.googleAdsHistory=[{data:d.googleAds,savedAt:new Date().toISOString()},...(d.googleAdsHistory||[])].slice(0,3);d.googleAds={...(d.googleAds||{}),keywords:data.keywords,selected:[],titles:[],descriptions:[],sitelinks:[],strategy:data.strategy};markArtifact(d,'googleAds')}
     if(task==='googleAds'){if(d.googleAds)d.googleAdsHistory=[{data:d.googleAds,savedAt:new Date().toISOString()},...(d.googleAdsHistory||[])].slice(0,3);d.googleAds=data;markArtifact(d,'googleAds')}
     if(task==='approach'){d.approach=data;markArtifact(d,'approach')}
@@ -181,8 +190,14 @@ export default function Home(){
   const health=projectHealth(p);
   const stage=lifecycle(p);
   const inProject=projectOpen&&view!=='projects'&&view!=='settings';
-  const allowed=stage==='won'?['journey','brand','content','ads','campaigns',...(p.mediaPlanConfirmed?['home','performance','calendar','readiness','learning']:[])]:['journey','brand','prospecting','plan'];
-  const projectNav=NAV.filter(([key])=>allowed.includes(key));
+  const lockReason=(group:string,key:View)=>{
+    if(group==='prospeccao')return '';
+    if(stage!=='won')return 'Libera quando a proposta for fechada.';
+    if(AFTER_INVESTMENT.includes(key)&&!p.mediaPlanConfirmed)return 'Libera depois de confirmar o investimento.';
+    return '';
+  };
+  const nx=nextStep(p);
+  const afterPersona=stage==='won'?{label:'Continuar para RETINA →',go:()=>navigate('content')}:{label:`Continuar: ${nx.label} →`,go:()=>navigate(nx.view as View,nx.sub)};
 
   return <div className="appShell">
     <aside id="main-menu" className={`sidebar ${mobileMenu?'mobileOpen':''}`}>
@@ -193,7 +208,10 @@ export default function Home(){
       {inProject&&<div className="projectNavigation">
         <div className="projectContext"><small>PROJETO ABERTO</small><b title={p.name}>{p.name}</b></div>
         <nav aria-label={`Áreas de ${p.name}`}>
-          {projectNav.map(([key,label,icon])=><button key={key} aria-current={view===key?'page':undefined} className={view===key?'active':''} onClick={()=>navigate(key)}><i>{icon}</i><span><b>{label}</b></span></button>)}
+          {NAV_GROUPS.map(g=><div key={g.key} className="navGroup" role="group" aria-label={g.label}>
+            <div className="navGroupTitle">{g.label}{g.key==='gestao'&&stage!=='won'&&<em>libera após fechar</em>}</div>
+            {g.items.map(key=>{const item=NAV.find(x=>x[0]===key)!;const reason=lockReason(g.key,key);return <button key={key} aria-current={view===key?'page':undefined} aria-disabled={!!reason} disabled={!!reason} title={reason||undefined} className={(view===key?'active ':'')+(reason?'locked':'')} onClick={()=>navigate(key)}><i>{reason?'🔒':item[2]}</i><span><b>{item[1]}</b></span></button>})}
+          </div>)}
         </nav>
         <div className="sidebarFoot"><div className="healthMini"><span>Estrutura do projeto</span><b>{health.score}%</b></div><div className="progress"><i style={{width:health.score+'%'}}/></div><small>{health.stale.length?`${health.stale.length} item(ns) desatualizado(s)`:'Base consistente'}</small></div>
       </div>}
@@ -220,7 +238,8 @@ export default function Home(){
         {engineError&&<EngineErrorBanner error={engineError} onSettings={()=>{setEngineError(null);navigate('settings')}} onDismiss={()=>setEngineError(null)} onRetry={()=>{const e=engineError;setEngineError(null);if(e.task==='journey')setJourneyDialog(true);else runEngine(e.task,e.input)}}/>}
         {inProject&&<ProjectFlow p={p} view={view} sub={sub} go={navigate}/>}
         {view==='projects'&&<Projects projects={projects} open={openProject} create={()=>setProjectDialog(true)}/>}
-        {view==='brand'&&(stage==='won'?<><Tabs items={[["brief","Empresa"],["persona","Persona"]]} value={sub.brand||'persona'} onChange={(t:string)=>setSub(x=>({...x,brand:t}))}/>{(sub.brand||'persona')==='persona'?<PersonaWorkspace key={pid} p={p} update={update} run={runEngine} onContinue={()=>navigate('content')}/>:<BrandBrief p={p} update={update} onContinue={()=>navigate('brand','persona')}/>}</>:<BrandBrief p={p} update={update} onContinue={()=>navigate('prospecting','approach')}/>)}
+        {view==='brand'&&<BrandBrief p={p} update={update} onContinue={()=>stage==='won'?navigate('persona'):navigate('prospecting','approach')}/>}
+        {view==='persona'&&<PersonaWorkspace key={pid} p={p} update={update} run={runEngine} continueLabel={afterPersona.label} onContinue={afterPersona.go}/>}
         {view==='plan'&&<PlanWorkspace key={pid} p={p} update={update} run={runEngine} settings={globalSettings} onContinue={()=>navigate('prospecting','proposal')}/>}
         {view==='content'&&<ContentWorkspace key={pid} p={p} update={update} run={runEngine} onContinue={()=>navigate('ads','meta')}/>}
         {view==='calendar'&&<CalendarWorkspace key={pid} p={p} update={update}/>}
@@ -270,6 +289,7 @@ function Journey({p,go,ai,onJourney}:any){
  return <><section className="workflowHero"><div><small>{won?'CLIENTE ATIVO':'PROSPECÇÃO'}</small><h2>{won?'Da estratégia para a execução.':'Do primeiro briefing ao fechamento.'}</h2><p>{won?'Persona, conteúdo, anúncios, investimento e resultado.':'O Nexus abre somente a etapa que faz sentido agora.'}</p></div><button className="primary" onClick={target.action}>{'Continuar: '+target.title} →</button></section>
  <div className="journey simpleJourney">{steps.map((s:any,i:number)=>{const unlocked=i===0||steps.slice(0,i).every((x:any)=>x.done);return <button className={'journeyStep '+(s.done?'done ':'')+(i===current?'current':'')} disabled={!unlocked} key={s.title} onClick={s.action}><div className="stepNo">{s.done?'✓':i+1}</div><div className="stepBody"><div className="stepTitle"><div><b>{s.title}</b><span>{s.done?'Concluído':i===current?'Próxima etapa':'Aguardando'}</span></div></div><em>›</em></div></button>})}</div>
  {won&&<section className="card journeyCard"><div><div className="eyebrow">JORNADA IA ESSENCIAL · OPCIONAL</div><h3>Gerar Persona, RETINA, Meta Ads e palavras-chave em sequência</h3><p>São 4 chamadas à OpenAI. O Nexus para no primeiro erro, você pode cancelar a qualquer momento e depois revisa cada resultado. Se preferir, siga etapa por etapa pelo fluxo acima.</p>{resume&&<span className="tag">Interrompida: dá para retomar de {ENGINE_LABELS[resume]}</span>}</div><button className="primary" disabled={!ai.apiKey} title={ai.apiKey?'':'Conecte a OpenAI em Configurações'} onClick={onJourney}>✦ {resume?'Retomar ou recomeçar':'Executar jornada'}</button></section>}
+ {!won&&<section className="card journeyCard"><div><div className="eyebrow">PERSONA · RECOMENDADO ANTES DO PLANO</div><h3>{p.persona?`Persona pronta: ${p.persona.nome||'sem nome'}`:'Crie a persona para o plano falar com quem compra'}</h3><p>O plano de marketing usa a persona quando ela existe. Sem persona, ele não inventa uma: só usa o público informado.</p></div><button className="secondary" onClick={()=>go('persona')}>{p.persona?'Ver persona':'✦ Criar persona'}</button></section>}
  <UsageCard summary={usageSummary(p)}/></>;
 }
 
@@ -281,7 +301,7 @@ function Prospecting({p,tab,setTab,run,settings,update,go}:any){
  const items=[['approach','Abordagem'],['proposal','Proposta']];
  const manager={...settings,managerName:settings.managerName||settings.agencyName||'Nexus Digital',targetNiche:p.specialty||p.niche};
  const ready=!!((settings.managerName||settings.agencyName||'Nexus Digital').trim()&&p.name?.trim()&&(p.specialty||p.services||p.products)?.trim());
- const decide=(status:string)=>{update((d:any)=>{d.proposal={...(d.proposal||{}),status};d.commercialStage=status==='Fechado'?'won':'declined';d.status=status==='Fechado'?'Ativo':'Declinado'},status==='Fechado'?'Cliente fechado. Gestão liberada.':'Proposta marcada como declinada.');if(status==='Fechado')go('brand','persona');else go('projects')};
+ const decide=(status:string)=>{update((d:any)=>{d.proposal={...(d.proposal||{}),status};d.commercialStage=status==='Fechado'?'won':'declined';d.status=status==='Fechado'?'Ativo':'Declinado'},status==='Fechado'?'Cliente fechado. Gestão liberada.':'Proposta marcada como declinada.');if(status==='Fechado')go('persona');else go('projects')};
  return <>
   <div className="sectionIntro"><div><div className="eyebrow">{tab==='approach'?'ETAPA 2 DE 5 · PROSPECÇÃO':'ETAPA 4 E 5 DE 5 · PROSPECÇÃO'}</div><h2>{tab==='approach'?'Prepare uma abordagem específica para esta empresa.':'Transforme o plano em proposta e registre a decisão.'}</h2></div></div><Tabs items={items} value={tab} onChange={setTab}/>
   {tab==='approach'&&<><div className="grid2"><Card eyebrow="ABORDAGEM" title="Contexto"><Field label="Canal"><select value={channel} onChange={e=>setChannel(e.target.value)}><option>WhatsApp</option><option>Instagram</option><option>Ligação</option><option>Presencial</option></select></Field><Field label="Como chegamos até esta empresa?"><textarea value={context} onChange={e=>{setContext(e.target.value);setAI('planApproachContext',e.target.value)}} placeholder="Contato frio, indicação, conversa anterior..."/></Field><div className="managerSummary"><small>QUEM ABORDA</small><b>{settings.managerName||settings.agencyName}</b><span>{settings.agencyName} · {settings.region||'região a definir'}</span></div></Card>
@@ -307,6 +327,7 @@ function MetaAds({p,update,run}:any){
  return <><div className="sectionIntro"><div><div className="eyebrow">ANÚNCIOS / META</div><h2>Oferta + destino + ação + persona.</h2><p>O motor só gera os quatro anúncios quando as quatro respostas exigidas pelo prompt estiverem disponíveis.</p></div><button className="primary" disabled={!ready} onClick={()=>run('metaAds')}>✦ {p.metaAds?'Regenerar 4 anúncios':'Gerar 4 anúncios'}</button></div>
  <Card eyebrow="ANTES DE GERAR" title="Informações obrigatórias"><Field label="O que você está anunciando"><textarea value={ai.adOffer||''} onChange={e=>setAI('adOffer',e.target.value)} placeholder={p.offers||p.services||'Descreva produto, serviço, oferta ou evento com detalhes.'}/></Field><div className="form2"><Field label="Destino após o clique"><input value={ai.adDestination||p.contactDestination||''} onChange={e=>setAI('adDestination',e.target.value)} placeholder="WhatsApp, página, formulário..."/></Field><Field label="Ação desejada no destino"><input value={ai.conversionAction||''} onChange={e=>setAI('conversionAction',e.target.value)} placeholder="Enviar mensagem, pedir orçamento..."/></Field></div><div className="requirementGrid"><div className={(ai.adOffer||p.offers||p.services||p.products)?'ready':'missing'}><span>{(ai.adOffer||p.offers||p.services||p.products)?'✓':'○'}</span><b>Oferta detalhada</b></div><div className={(ai.adDestination||p.contactDestination)?'ready':'missing'}><span>{(ai.adDestination||p.contactDestination)?'✓':'○'}</span><b>Destino</b></div><div className={ai.conversionAction?'ready':'missing'}><span>{ai.conversionAction?'✓':'○'}</span><b>Ação</b></div><div className={p.persona?'ready':'missing'}><span>{p.persona?'✓':'○'}</span><b>Persona</b></div></div></Card>
  {!p.metaAds?<Empty title="Meta Ads ainda não gerado" text="Complete as quatro informações e gere os anúncios pelo Método GCC."/>:<div className="adsGrid">{(p.metaAds.ads||[]).map((a:any,i:number)=><Card key={i} eyebrow={`ANÚNCIO ${i+1}`} title={a.angle}><div className="adPreview"><small>GANCHO</small><b>{a.hooks?.pergunta||a.hooks?.contraintuitiva}</b><p>{a.body}</p><button>{a.cta}</button></div><div className="hookList">{Object.entries(a.hooks||{}).map(([k,v]:any)=><div key={k}><span>{k}</span><p>{v}</p></div>)}</div>{a.awareness&&<div className="hypothesis">Nível de consciência: {a.awareness}</div>}<StatusDot status={status}/></Card>)}</div>}
+ {p.metaAds&&<Card eyebrow="PASSO OPCIONAL DO PROMPT" title="20 ganchos extras" action={<button className="secondary" disabled={(p.metaAds.ads||[]).length<4} onClick={()=>run('extraHooks')}>✦ {p.metaAds.extraHooks?'Gerar novos ganchos':'Sim, listar 20 ganchos'}</button>}><p className="muted">Você gostaria que eu listasse mais 20 exemplos de ganchos que você pode utilizar para estes anúncios ou então para colocar em imagens?</p>{p.metaAds.extraHooks&&<div className="grid2"><CopyBlock title="10 ganchos para anúncios em vídeo" hint="Distribuídos entre pergunta, história, sacada contraintuitiva e segmentado." lines={(p.metaAds.extraHooks.videoHooks||[]).map((h:any,i:number)=>`${i+1}. [${h.type}] ${h.text}`)}/><CopyBlock title="10 ganchos para imagens" hint="Headlines curtas para anúncios em imagem." lines={(p.metaAds.extraHooks.imageHeadlines||[]).map((h:string,i:number)=>`${i+1}. ${h}`)}/></div>}</Card>}
  </>;
 }
 function Tracking({p,update}:any){const t=p.tracking||{};const set=(k:string,v:any)=>update((d:any)=>{d.tracking={...(d.tracking||{}),[k]:v}},'Tracking atualizado');return <div className="grid2"><Card eyebrow="UTM BUILDER" title="Padronização"><Field label="utm_source"><input value={t.utmSource||''} onChange={e=>set('utmSource',e.target.value)}/></Field><Field label="utm_medium"><input value={t.utmMedium||''} onChange={e=>set('utmMedium',e.target.value)}/></Field><Field label="utm_campaign"><input value={t.utmCampaign||''} onChange={e=>set('utmCampaign',e.target.value)}/></Field><div className="utmPreview">?utm_source={t.utmSource||'{source}'}&utm_medium={t.utmMedium||'{medium}'}&utm_campaign={t.utmCampaign||'{campaign}'}</div></Card><Card eyebrow="CONVERSÕES" title="Eventos essenciais"><div className="eventList">{['lead','whatsapp_click','form_submit','phone_click','purchase'].map(ev=><label key={ev}><input type="checkbox" checked={(t.events||[]).includes(ev)} onChange={e=>set('events',e.target.checked?[...(t.events||[]),ev]:(t.events||[]).filter((x:string)=>x!==ev))}/><span><b>{ev}</b><small>Evento de mensuração</small></span></label>)}</div></Card></div>}
