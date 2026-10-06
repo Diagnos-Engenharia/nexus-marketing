@@ -29,3 +29,36 @@ test('matriz completa: 9 combinações coerentes com o cálculo de verba',()=>{
  }
  rows[0].campaigns.push('x');assert.ok(!matrixTable()[0].campaigns.includes('x'),'não expõe o estado interno da matriz');
 });
+
+const sparsePlan=(over={})=>({cover:{title:'Plano',company:'Acme'},proposal:{text:'Proposta enxuta'},channels:[],salesFlow:{steps:[]},activation:{timeline:[]},invitation:{text:''},...over});
+
+test('plano com pouca informação é aceito e registra o que ficou de fora',()=>{
+  const out=validateGeneration('marketingPlan',sparsePlan(),{});
+  assert.ok(out.omittedSections.includes('Canais recomendados'));
+  assert.ok(out.omittedSections.includes('Onde a venda acontece'));
+  assert.ok(out.omittedSections.includes('Ordem de ativação'));
+  assert.ok(out.omittedSections.includes('Convite final'));
+  assert.ok(!out.omittedSections.includes('Proposta'));
+});
+
+test('plano completo não ganha seções omitidas e preserva as do motor',()=>{
+  const full=sparsePlan({channels:[{name:'Google'}],salesFlow:{steps:['a']},activation:{timeline:[{period:'d1'}]},invitation:{text:'oi'},omittedSections:['Contexto de mercado: sem dados reais',' ','']});
+  const out=validateGeneration('marketingPlan',full,{});
+  assert.deepEqual(out.omittedSections,['Contexto de mercado: sem dados reais']);
+});
+
+test('plano vazio, sem capa ou sem nenhum conteúdo continua rejeitado',()=>{
+  assert.throws(()=>validateGeneration('marketingPlan',null,{}),/capa/);
+  assert.throws(()=>validateGeneration('marketingPlan',[],{}),/capa/);
+  assert.throws(()=>validateGeneration('marketingPlan',{channels:[{name:'x'}]},{}),/capa/);
+  assert.throws(()=>validateGeneration('marketingPlan',{cover:{},proposal:{text:' '},channels:'não é lista'},{}),/sem conteúdo/);
+  assert.throws(()=>validateGeneration('marketingPlan',sparsePlan({channels:undefined,proposal:undefined,salesFlow:undefined,activation:undefined,invitation:undefined}),{}),/sem conteúdo/);
+});
+
+test('com persona, o plano ainda precisa de cliente, posicionamento e 5 níveis',()=>{
+  const p={persona:{nome:'A'}};
+  assert.throws(()=>validateGeneration('marketingPlan',sparsePlan(),p),/5 níveis de consciência/);
+  const ok=sparsePlan({client:{personaName:'A'},positioning:{commitments:[]},awareness:Array(5).fill({stage:'x'})});
+  assert.equal(validateGeneration('marketingPlan',ok,p).client.personaName,'A');
+  assert.throws(()=>validateGeneration('marketingPlan',sparsePlan({awareness:'texto'}),{}),/lista/);
+});

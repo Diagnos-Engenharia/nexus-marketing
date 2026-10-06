@@ -191,3 +191,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .matrixNotes{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .matrixNotes>div{border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:4px}.matrixNotes span{color:var(--muted);font-size:14px}
 @media(max-width:800px){.matrixNotes{grid-template-columns:1fr}}
+
+/* Plano de marketing: aviso do que ficou de fora por falta de material */
+.planNotice{display:grid;gap:3px;margin-bottom:18px;padding:14px 18px;border:1px solid #f1dcae;background:var(--amberbg);border-radius:14px}
+.planNotice b{color:var(--amber);font-size:15px}.planNotice span{font-size:15px}.planNotice small{color:var(--muted);font-size:13px}
