@@ -61,6 +61,6 @@ export function UsageCard({summary,title='Uso de IA neste projeto',scope}:{summa
 
 export function EngineErrorBanner({error,onRetry,onSettings,onDismiss}:{error:{label:string;message:string;code?:string};onRetry:()=>void;onSettings:()=>void;onDismiss:()=>void}){
   const config=['auth','forbidden','quota','model'].includes(error.code||'');
-  return <div className="engineError" role="alert"><div><b>{error.label} não foi concluído</b><span>{error.message}</span></div>
+  return <div className="engineError" role="alert"><div><b>{error.label}: a geração não foi concluída</b><span>{error.message}</span></div>
     <div className="buttonRow">{config?<button className="primary" onClick={onSettings}>Abrir configurações</button>:<button className="primary" onClick={onRetry}>Tentar novamente</button>}<button className="secondary" onClick={onDismiss}>Dispensar</button></div></div>;
 }

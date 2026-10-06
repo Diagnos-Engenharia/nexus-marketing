@@ -167,12 +167,12 @@ export default function Home(){
         try{const j=await callAI(t,draft,{},ctl.signal);applyResult(draft,t,j.data,j.usage)}
         catch(e:any){if(e.usage)addUsage(draft,t,e.usage,{failed:true});run={...run,status:e.code==='cancelled'?'cancelled':'failed',failedTask:t,error:e.message};save();throw e}
         run={...run,done:[...run.done,t]};
-        draft.history=[{at:new Date().toISOString(),text:`${ENGINE_LABELS[t]} gerado pela jornada IA`},...(draft.history||[])].slice(0,100);
+        draft.history=[{at:new Date().toISOString(),text:`Gerado pela jornada IA: ${ENGINE_LABELS[t]}`},...(draft.history||[])].slice(0,100);
         save();
       }
       run={...run,status:'done'};save();setAI(x=>({...x,connected:true}));setToast('Jornada IA concluída. Revise cada resultado.');
     }catch(e:any){
-      if(e.code==='cancelled')setToast('Jornada cancelada. Você pode retomar de onde parou.');
+      if(e.code==='cancelled')setToast(run.done.length?'Jornada cancelada. Você pode retomar de onde parou.':'Jornada cancelada. Nada foi alterado.');
       else setEngineError({task:'journey',label:'Jornada IA essencial',message:e.message||'Falha na jornada.',code:e.code,input:null});
     }finally{setBusy(null);abortRef.current=null}
   };
