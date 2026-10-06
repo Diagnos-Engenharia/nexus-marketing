@@ -80,3 +80,21 @@ O plano de marketing e a proposta saem em **A4**, com a **logo e as cores do cli
 - Tudo renderiza offline (só fontes do sistema e SVG). **Ver e exportar PDF** abre a pré-visualização; **Salvar como PDF** usa a impressão do navegador. O texto passa por uma limpeza que remove travessão e emoji.
 
 Na matriz de investimento, a presença local/GBP começa em **20% da parcela destinada ao Google**. O valor pode ser ajustado nas opções avançadas.
+
+## Postagens do anúncio
+
+Em **Gestão, Anúncios (Meta)**, cada anúncio tem o botão **Gerar postagem**. Ele abre uma janela só daquele anúncio com **5 postagens diferentes**, uma de cada modelo:
+
+| Modelo | Para que serve |
+|--------|----------------|
+| Gancho em destaque | parar o scroll com a frase do anúncio |
+| Mito × Realidade | corrigir uma crença comum |
+| Checklist | utilidade e autoridade |
+| Recado do especialista | conversa direta, tom humano |
+| Convite direto | chamada clara para agir |
+
+- A IA escreve só o texto (manchete, apoio, botão, legenda e hashtags) a partir do anúncio, da persona e da oferta. Cada rodada de 5 usa a IA e conta nos tokens do projeto. A imagem é desenhada no seu navegador, com a **logo e as cores do cliente** (sem logo, usa o nome da empresa).
+- Formatos: **Feed 4:5** (1080 x 1350, padrão) e **Quadrado 1:1** (1080 x 1080). Dá para trocar o formato sem gerar de novo.
+- Selecione as postagens e baixe: uma vira PNG, várias saem num ZIP. **Copiar legenda** leva legenda e hashtags.
+- **Gerar outros 5** cria uma nova rodada, com esquema claro/escuro invertido e sem repetir as anteriores. Ficam as 4 últimas rodadas por anúncio (20 postagens). Regenerar os 4 anúncios descarta as postagens.
+- Não publica nada nas redes sociais. Os textos seguem as regras do projeto: sem emoji, sem travessão, sem inventar número, cliente ou resultado.

@@ -161,6 +161,7 @@ export default function Home(){
   useEffect(()=>{setStudio(null)},[view,pid]);
   const generatePosts=(i:number)=>{if(!ai.apiKey)setStudio(null);runEngine('posts',{adIndex:i},'5 postagens prontas')};
   const openStudio=(i:number)=>{
+    if(engineError?.task==='posts')setEngineError(null);
     if(!(p?.metaAds?.adPosts?.[adKey(i)]?.sets?.length)){generatePosts(i);if(!ai.apiKey)return}
     setStudio(i);
   };
@@ -256,7 +257,7 @@ export default function Home(){
     </main>
     {projectDialog&&<ProjectDialog save={createProject} close={()=>setProjectDialog(false)}/>}
     {toast&&<div role="status" className="toast">{toast}</div>}
-    {studio!==null&&view==='ads'&&p?.metaAds?.ads?.[studio]&&<PostStudio p={p} adIndex={studio} error={engineError?.task==='posts'?engineError:null} onClose={()=>setStudio(null)} onGenerate={()=>{setEngineError(null);generatePosts(studio)}} onSettings={()=>{setEngineError(null);setStudio(null);navigate('settings')}} onDismissError={()=>setEngineError(null)}/>}
+    {studio!==null&&view==='ads'&&p?.metaAds?.ads?.[studio]&&<PostStudio p={p} adIndex={studio} error={engineError?.task==='posts'&&engineError.input?.adIndex===studio?engineError:null} onClose={()=>setStudio(null)} onGenerate={()=>{setEngineError(null);generatePosts(studio)}} onSettings={()=>{setEngineError(null);setStudio(null);navigate('settings')}} onDismissError={()=>setEngineError(null)}/>}
     {busy&&<div className="busyOverlay"><div className="busyCard"><div className="orb">✦</div><small>NEXUS AI ENGINE</small><h3>{busy.label}</h3><p>{busy.step||'Processando contexto, estratégia e estrutura de saída...'}</p><div className="loader"><i/></div><span>Você pode aguardar nesta tela. O resultado será salvo no projeto.</span>{busy.cancellable&&<button className="secondary busyCancel" onClick={()=>abortRef.current?.abort()}>Cancelar geração</button>}</div></div>}
     {preflightDialog&&<PreflightDialog title={preflightDialog.title} items={preflightDialog.items} onGo={gotoItem} onClose={()=>setPreflightDialog(null)}/>}
     {journeyDialog&&<JourneyDialog p={p} gate={preflightJourney(p)} resumeTask={journeyResumePoint(p.journeyRun)} onRun={executeJourney} onGo={gotoItem} onClose={()=>setJourneyDialog(false)}/>}
