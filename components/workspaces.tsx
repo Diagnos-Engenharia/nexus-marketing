@@ -3,7 +3,7 @@ import {useEffect,useRef,useState} from 'react';
 import {calcBudget,investmentLevel,markArtifact,projectHealth,matrixTable,DEMAND_LABELS,LEVEL_LABELS} from '../lib/core.js';
 import {buildPlanDocument} from '../lib/plan-document.js';
 import {paletteFromImage} from '../lib/palette.js';
-import {DocumentPreview} from './doc-preview';
+import {DocumentPreview,DocumentCard} from './doc-preview';
 import {nextStep} from '../lib/journey.js';
 const money=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const categories=['Relacionamento','Engajamento','Transformação','Interação 1x1','Níveis de consciência','Autoridade'];
@@ -102,6 +102,8 @@ export function PlanWorkspace({p,update,run,onContinue,settings}:any){
  ];
  const hasClient=!!(data?.client&&(data.client.personaName||data.client.summary||data.client.obstacle||(data.client.fears||[]).length||(data.client.objections||[]).length));
  const hasAwareness=Array.isArray(data?.awareness)&&data.awareness.length>0;
+ const signer={name:ai.signerName||settings?.managerName,role:ai.signerRole||settings?.managerSpecialty,whatsapp:ai.signerWhatsapp||settings?.agencyWhatsapp};
+ const doc=data?buildPlanDocument(p,data,{signer}):null;
  const omitted:string[]=Array.isArray(data?.omittedSections)?data.omittedSections.filter((x:any)=>typeof x==='string'&&x.trim()):[];
  const hasPositioning=!!(data?.positioning&&((data.positioning.commitments||[]).length||(data.positioning.fearResponses||[]).length));
  let pageNo=0;
@@ -110,6 +112,7 @@ export function PlanWorkspace({p,update,run,onContinue,settings}:any){
  <Requirements items={material} title="Informações reunidas" note="Itens opcionais ausentes não travam a geração; o Nexus simplesmente não inventa o que não foi informado."/>
  <details className="contextDetails" open={!data}><summary>Completar informações específicas do plano</summary><div className="form2"><Field label="Contexto da prospecção"><textarea value={ai.planApproachContext||''} onChange={e=>setAI('planApproachContext',e.target.value)} placeholder="Contato frio, conversa anterior, indicação, o que já foi dito..."/></Field><Field label="Quem receberá o material"><textarea value={ai.planRecipientProfile||''} onChange={e=>setAI('planRecipientProfile',e.target.value)} placeholder="Dono, gerente, o que valoriza, o que já tentou, o que incomoda..."/></Field></div><Field label="Condições atuais conhecidas" hint="Garantia, taxa de visita, horários, área atendida, formas de pagamento. Se não souber, deixe em branco."><textarea value={ai.operationalDetails||''} onChange={e=>setAI('operationalDetails',e.target.value)}/></Field><Field label="Outros materiais ou informações"><textarea value={ai.additionalMaterials||p.planContext||''} onChange={e=>{setAI('additionalMaterials',e.target.value);update((d:any)=>{d.planContext=e.target.value})}} placeholder="Avaliações, prints, dados internos, observações..."/></Field><div className="form2"><Field label="Nome para assinatura"><input value={ai.signerName||settings?.managerName||''} onChange={e=>setAI('signerName',e.target.value)}/></Field><Field label="Cargo / assinatura"><input value={ai.signerRole||settings?.managerSpecialty||''} onChange={e=>setAI('signerRole',e.target.value)}/></Field></div><Field label="WhatsApp com DDD"><input value={ai.signerWhatsapp||settings?.agencyWhatsapp||''} onChange={e=>setAI('signerWhatsapp',e.target.value)} placeholder="15999999999"/></Field><Field label="Convite final opcional"><textarea value={ai.invitationText||''} onChange={e=>setAI('invitationText',e.target.value)} placeholder="Se deixar vazio, o próprio prompt escreve o convite."/></Field></details>
  {!data?<section className="empty"><h3>O plano ainda não foi gerado.</h3><p>Quanto mais itens acima estiverem preenchidos, mais específico será o documento. Você pode gerar mesmo com itens opcionais ausentes.</p></section>:<div className="planPages">
+ {doc&&<DocumentCard kind="Plano de marketing" company={p.name||'Empresa'} logo={p.brandLogo} palette={doc.palette} pages={doc.pages.length} hasLogo={!!p.brandLogo} onOpen={()=>setPreview(true)}/>}
  {omitted.length>0&&<div className="planNotice" role="status"><b>O plano deixou de fora o que não tinha material</b><span>{omitted.join(' · ')}</span><small>Preencha mais informações acima e gere uma nova versão para completá-lo. O Nexus não inventa o que não foi informado.</small></div>}
  {page('Capa',<>{p.brandLogo&&<img className="planClientLogo" src={p.brandLogo} alt="Logo do cliente"/>}<h2>{data.cover?.company||p.name}</h2><p>{data.cover?.objective}</p><div className="tagRow"><span>{data.cover?.city}</span><span>{data.cover?.period}</span><span>{data.cover?.conversion}</span></div></>)}
  {page('O que este plano propõe',<><p>{data.proposal?.text}</p>{data.proposal?.communicationPromise&&<blockquote className="planHighlight">{data.proposal.communicationPromise}</blockquote>}<div className="planRows">{(data.proposal?.workstreams||[]).map((x:any,i:number)=><div key={i}><b>{x.channel}</b><span>{x.audience}</span><p>{x.role}</p></div>)}</div></>)}
@@ -123,7 +126,7 @@ export function PlanWorkspace({p,update,run,onContinue,settings}:any){
  {(data.invitation?.text||data.invitation?.whatsappNumber||data.invitation?.signature)&&page(data.invitation?.title||'Se quiser conversar sobre isso',<><p>{data.invitation?.text}</p>{data.invitation?.whatsappNumber&&<div className="planContact"><b>WhatsApp</b><span>{data.invitation.whatsappNumber}</span><small>{data.invitation.whatsappMessage}</small></div>}<p><b>{data.invitation?.signature}</b></p></>)}
  <div className="planActions"><button className="secondary" onClick={()=>setPreview(true)}>Ver e exportar PDF</button><button className="primary" onClick={onContinue}>Continuar para proposta →</button>{data.sendSeparately?.length>0&&<span>Enviar à parte: {data.sendSeparately.join(', ')}</span>}</div>
  </div>}
- {preview&&data&&<DocumentPreview title={`Plano de marketing · ${p.name||'Projeto'}`} filename={`plano-${String(p.name||'projeto').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}`} html={buildPlanDocument(p,data,{signer:{name:ai.signerName||settings?.managerName,role:ai.signerRole||settings?.managerSpecialty,whatsapp:ai.signerWhatsapp||settings?.agencyWhatsapp}}).html} onClose={()=>setPreview(false)}/>}
+ {preview&&data&&<DocumentPreview title={`Plano de marketing · ${p.name||'Projeto'}`} filename={`plano-${String(p.name||'projeto').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}`} html={doc!.html} onClose={()=>setPreview(false)}/>}
  </>;
 }
 // Estrutura do prompt "Criador de Persona" (curso): tudo aparece expandido, na ordem do prompt.

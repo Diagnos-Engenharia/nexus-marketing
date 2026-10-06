@@ -58,11 +58,24 @@ Projetos novos começam no briefing, sem dashboard. O painel de gestão só é l
 
 O menu lateral do projeto tem dois grupos:
 
-- **Prospecção** (sempre ativa): Persona, Marca e público, Plano de marketing, Comercial e Fluxo do projeto.
-- **Gestão** (libera depois que a proposta é marcada como **Fechado**): Conteúdo RETINA, Anúncios (Meta e Google), Investimento e, depois de confirmar o investimento, Painel, Resultados, Calendário, Preparar canais e Aprendizados. Antes do fechamento os itens aparecem travados, com a dica de quando liberam.
+- **Prospecção**: Persona (até o fechamento), **Empresa e especialista**, Plano de marketing, Comercial e Fluxo do projeto.
+- **Gestão** (libera depois que a proposta é marcada como **Fechado**): Persona, Conteúdo RETINA, Anúncios (Meta e Google), Investimento e, depois de confirmar o investimento, Painel, Resultados, Calendário, Preparar canais e Aprendizados. Antes do fechamento os itens aparecem travados, com a dica de quando liberam.
 
-A **Persona** fica em Prospecção: um clique em **Criar persona** gera a pesquisa completa, na ordem do prompt do curso (retrato, problema e obstáculo, emoções e medos, passado, decisão de compra e os 5 níveis de consciência), tudo aberto na tela, com edição, cópia e o aprofundamento de medos, dores, desejos e objeções.
+Depois do fechamento a **Persona sai de Prospecção e passa a ser a primeira etapa da Gestão**, que libera aos poucos, como a Prospecção: criar a persona libera o conteúdo, o conteúdo libera os anúncios, os anúncios liberam o investimento.
+
+**Empresa e especialista**: depois de preencher empresa e oferta, **Gerar especialista** cria o perfil de quem presta o serviço (medos, receios, dificuldades, o que valoriza e como conversar). É uma hipótese para você se preparar para a conversa, não um dado sobre alguém real.
+
+A **Persona** gera a pesquisa completa na ordem do prompt do curso (retrato, problema e obstáculo, emoções e medos, passado, decisão de compra e os 5 níveis de consciência), tudo aberto na tela, com edição, cópia e o aprofundamento de medos, dores, desejos e objeções.
 
 Em **Investimento**, a matriz mostra as 9 combinações (3 cenários × 3 faixas) e destaca a do projeto. Em **Anúncios**, o Meta tem o passo opcional dos **20 ganchos extras** e o Google traz as listas prontas para copiar (uma por linha).
+
+## Plano e proposta em PDF
+
+O plano de marketing e a proposta saem em **A4**, com a **logo e as cores do cliente** (plano) ou da agência (proposta):
+
+- Envie a logo em Empresa e especialista (PNG, JPG ou SVG). O Nexus conta os pixels e extrai a cor principal, a de destaque e um neutro claro; dá para ajustar à mão. A logo da agência fica em Configurações.
+- O plano segue o prompt do curso: até 12 páginas, uma ideia por página, capa com logo, sumário com as páginas, diagramas em SVG, uma página por canal com o material do projeto já selecionado (8 títulos, 1 anúncio completo, tabela das peças e 1 roteiro) e o convite final com botão do WhatsApp. Blocos sem material são removidos, nunca inventados.
+- A proposta traz capa com as duas logos, investimento em destaque, responsabilidades e aceite com linhas de assinatura.
+- Tudo renderiza offline (só fontes do sistema e SVG). **Ver e exportar PDF** abre a pré-visualização; **Salvar como PDF** usa a impressão do navegador. O texto passa por uma limpeza que remove travessão e emoji.
 
 Na matriz de investimento, a presença local/GBP começa em **20% da parcela destinada ao Google**. O valor pode ser ajustado nas opções avançadas.

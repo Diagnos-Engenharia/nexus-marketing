@@ -207,3 +207,45 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .specialistGroup{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
 .specialistTitle{margin:0 0 12px;color:var(--blue);font-size:17px}
 .specialistGroup h5{margin:0 0 3px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+
+/* ===== Design v2: um padrão de página, alinhado em todas as etapas ===== */
+@media(min-width:1100px){.appShell{grid-template-columns:272px minmax(0,1fr)}}
+@media(min-width:801px){
+  /* Cabeçalho de página: eyebrow, título, apoio e ação principal sempre no mesmo lugar */
+  .sectionIntro{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:10px 28px;margin-bottom:24px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+  .sectionIntro .eyebrow{margin:0}
+  .sectionIntro h2{margin:6px 0 8px;font-size:28px;line-height:1.2;letter-spacing:-.02em;max-width:900px}
+  .sectionIntro p{margin:0;font-size:15.5px;line-height:1.55;color:var(--muted);max-width:760px}
+  .sectionIntro>:nth-child(2){align-self:center;justify-self:end;white-space:nowrap}
+  /* Cartões e colunas: mesma altura, mesmo respiro */
+  .page{padding-bottom:110px}
+  .card{padding:24px 26px;margin-bottom:22px;border-radius:16px}
+  .card>h3,.cardHead h3{font-size:19px;line-height:1.35;margin:0 0 16px}
+  .cardHead{align-items:center;margin-bottom:16px}.cardHead h3{margin-bottom:0}
+  .workspaceColumns{align-items:stretch;gap:22px;margin-bottom:22px}
+  .workspaceColumns>.card{height:100%;margin-bottom:0}
+  .workspaceColumns .stack{display:grid;gap:22px;align-content:start}.workspaceColumns .stack>.card{margin-bottom:0}
+  /* Formulários */
+  .field{margin:0 0 16px}.field:last-child{margin-bottom:0}
+  .field>span{font-size:13px;margin-bottom:6px;color:#56657b}
+  .field textarea{min-height:84px}
+  .form2{gap:16px}.form2>.field{margin-bottom:16px}
+  .tabs{margin:0 0 24px}
+  /* Rodapé de ação, pré-requisitos e vazios */
+  .flowFooter{margin-top:24px}
+  .enginePrep{margin:0 0 22px}
+  .empty{padding:44px 24px}.empty h3{font-size:21px}
+  .flowRail{margin-bottom:22px}
+}
+
+/* Cartão do documento para enviar */
+.docCard{display:grid;grid-template-columns:150px minmax(0,1fr);gap:22px;align-items:center;margin-bottom:22px;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 4px 15px rgba(29,50,79,.04)}
+.docCardCover{position:relative;aspect-ratio:210/297;border-radius:8px;overflow:hidden;display:grid;place-items:start center;padding:14px 10px;box-shadow:0 6px 18px rgba(15,39,71,.2)}
+.docCardLogo{background:#fff;border-radius:6px;padding:6px 8px;max-width:100%;display:grid;place-items:center;min-height:30px}
+.docCardLogo img{max-width:100%;max-height:34px;object-fit:contain}.docCardLogo span{font-size:11px;font-weight:800;color:#243247;text-align:center}
+.docCardCover i{position:absolute;left:0;right:0;bottom:0;height:22%}
+.docCardBody small{font-size:11px;letter-spacing:.14em;color:var(--blue);font-weight:800}.docCardBody h3{font-size:20px;margin:4px 0 6px}.docCardBody p{margin:0 0 14px;color:var(--muted);font-size:15px;line-height:1.5;max-width:560px}
+@media(max-width:800px){.docCard{grid-template-columns:90px minmax(0,1fr);gap:14px}}
+
+/* Títulos de cartão com etiqueta longa quebram em vez de alargar a página */
+.cardHead{flex-wrap:wrap}.cardHead .pill{white-space:normal;max-width:100%}

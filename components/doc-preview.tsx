@@ -14,3 +14,8 @@ export function DocumentPreview({html,title,filename,onClose}:{html:string;title
     <iframe ref={frame} className="docFrame" title={title} srcDoc={html}/>
   </div>;
 }
+
+export function DocumentCard({kind,company,logo,palette,pages,hasLogo,missing='Envie a logo em Empresa e especialista para usar as cores da marca',onOpen}:{kind:string;company:string;logo?:string;palette:{main:string;accent:string;onMain:string};pages:number;hasLogo:boolean;missing?:string;onOpen:()=>void}){
+  return <section className="docCard"><div className="docCardCover" style={{background:palette.main,color:palette.onMain}}><div className="docCardLogo">{logo?<img src={logo} alt=""/>:<span>{company}</span>}</div><i style={{background:palette.accent}}/></div>
+    <div className="docCardBody"><small>DOCUMENTO PARA ENVIAR</small><h3>{kind}</h3><p>{pages} páginas em A4, com {hasLogo?'a logo e as cores da marca':'azul-marinho e âmbar. '+missing}.</p><button className="primary" onClick={onOpen}>Ver e exportar PDF</button></div></section>;
+}

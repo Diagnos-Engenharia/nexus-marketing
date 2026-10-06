@@ -6,7 +6,7 @@ import {Projects,ProjectDialog,BrandBrief,MediaPlanning,PlanWorkspace,PersonaWor
 import {PreflightDialog,JourneyDialog,UsageCard,EngineErrorBanner} from '../components/engine-ui';
 import {buildProposalDocument} from '../lib/proposal-document.js';
 import {paletteFromImage} from '../lib/palette.js';
-import {DocumentPreview} from '../components/doc-preview';
+import {DocumentPreview,DocumentCard} from '../components/doc-preview';
 import {
   ENGINE_LABELS,addUsage,artifactStatus,calcBudget,evaluateExperiment,localFindings,markArtifact,
   metrics,normalizeRows,parseCSV,projectFactory,projectHealth,qualityEngine,sumUsage,usageSummary
@@ -310,12 +310,13 @@ function ApproachResult({data}:any){return <div className="resultList">{(data.ap
 function MarketingPlanResult({data}:any){return <div className="document"><p className="lead">{data.executiveSummary}</p><DocList title="Diagnóstico" items={data.diagnosis}/><DocList title="Objetivos" items={data.objectives}/><h4>Canais</h4>{(data.channels||[]).map((x:any,i:number)=><div className="miniLine" key={i}><b>{x.name}</b><span>{x.role} · {x.priority}</span></div>)}<h4>Plano de 90 dias</h4>{(data.ninetyDayPlan||[]).map((x:any,i:number)=><div className="timelineItem" key={i}><span>{x.period}</span><ul>{(x.actions||[]).map((a:string)=><li key={a}>{a}</li>)}</ul></div>)}</div>}
 function ProposalResult({data,project,agency}:any){
  const [preview,setPreview]=useState(false);
- return <div className="document proposalDoc"><div className="proposalHero"><small>{agency.agencyName||'NEXUS DIGITAL'}</small><h2>{data.title}</h2><p>{data.context}</p></div>
+ const doc=buildProposalDocument(project,data,agency);
+ return <div className="document proposalDoc"><DocumentCard kind="Proposta comercial" company={agency.agencyName||'Nexus Digital'} logo={agency.agencyLogo} palette={doc.palette} pages={doc.pages.length} hasLogo={!!agency.agencyLogo} missing="Envie a logo da agência em Configurações para usar as cores da marca" onOpen={()=>setPreview(true)}/><div className="proposalHero"><small>{agency.agencyName||'NEXUS DIGITAL'}</small><h2>{data.title}</h2><p>{data.context}</p></div>
  <div className="investment"><span>Setup <b>{data.investment?.setup}</b></span><span>Mensal <b>{data.investment?.monthly}</b></span>{data.investment?.media&&<span>Mídia <b>{data.investment.media}</b></span>}</div>
  <DocList title="Objetivos" items={data.objectives}/><DocList title="Escopo" items={data.scope}/><DocList title="Entregáveis" items={data.deliverables}/><DocList title="Processo" items={data.process}/><DocList title="Condições" items={data.terms}/>
  <p className="nextStep">{data.nextStep}</p>
  <div className="buttonRow"><button className="primary" onClick={()=>setPreview(true)}>Ver e exportar PDF</button></div>
- {preview&&<DocumentPreview title={`Proposta · ${project.name||'Projeto'}`} filename={`proposta-${String(project.name||'projeto').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}`} html={buildProposalDocument(project,data,agency).html} onClose={()=>setPreview(false)}/>}
+ {preview&&<DocumentPreview title={`Proposta · ${project.name||'Projeto'}`} filename={`proposta-${String(project.name||'projeto').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}`} html={doc.html} onClose={()=>setPreview(false)}/>}
  </div>}
 function DocList({title,items}:any){if(!items?.length)return null;return <div className="docList"><h4>{title}</h4><ul>{items.map((x:string,i:number)=><li key={i}>{x}</li>)}</ul></div>}
 
