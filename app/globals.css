@@ -195,3 +195,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 /* Plano de marketing: aviso do que ficou de fora por falta de material */
 .planNotice{display:grid;gap:3px;margin-bottom:18px;padding:14px 18px;border:1px solid #f1dcae;background:var(--amberbg);border-radius:14px}
 .planNotice b{color:var(--amber);font-size:15px}.planNotice span{font-size:15px}.planNotice small{color:var(--muted);font-size:13px}
+
+/* Pré-visualização dos documentos A4 */
+.docOverlay{position:fixed;inset:0;z-index:210;background:#dde3ec;display:flex;flex-direction:column}
+.docBar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line);box-shadow:0 2px 12px rgba(15,39,71,.08)}
+.docBar small{display:block;font-size:11px;letter-spacing:.14em;color:var(--blue);font-weight:800}.docBar b{font-size:16px}
+.docBar .buttonRow{margin:0}.docFrame{flex:1;width:100%;border:0;background:#dde3ec}
