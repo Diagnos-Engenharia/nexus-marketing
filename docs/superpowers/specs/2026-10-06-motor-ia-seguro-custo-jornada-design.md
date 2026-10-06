@@ -101,6 +101,8 @@ Três fatos encontrados na leitura de `page.tsx` e `workspaces.tsx` alteram a ex
 2. **Os botões de gerar já ficam desabilitados com checklist de requisitos** em cada tela. Por isso o diálogo "Antes de gerar" é a rede de segurança de `runEngine` (chamadas vindas da jornada, de atalhos e de estados que a tela não previu), e não a primeira linha de defesa.
 3. **Erros do motor viram toast que some em 2,8 s.** Mensagens como "anúncios fora dos limites de caracteres" desaparecem antes de serem lidas, o que contradiz o critério 2. Os erros do motor passam a um **banner fixo** com "Tentar novamente" (repetição manual, o custo é visível) ou "Abrir configurações" quando a causa é chave, acesso, saldo ou modelo. Não é o reparo automático excluído do escopo.
 
+4. **A lista de etapas existia em cinco lugares, não quatro.** O card de projeto em `Projects` (`workspaces.tsx`) tinha a sua própria cópia, com textos diferentes dos do botão "Continuar". Ele também passa a usar `nextStep`; o rótulo do card agora coincide com o destino de "Continuar".
+
 A tela inicial de um cliente ativo sem resultados passa a ser "Fontes". As etapas em `journeySteps` carregam rótulo curto (trilho), título (Fluxo), texto e destino.
 
 ## Dados

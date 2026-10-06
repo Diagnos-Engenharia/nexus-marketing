@@ -2,6 +2,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {calcBudget,investmentLevel,markArtifact,projectHealth} from '../lib/core.js';
 import {printMarketingPlan} from '../lib/print-docs.js';
+import {nextStep} from '../lib/journey.js';
 const money=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 const categories=['Relacionamento','Engajamento','Transformação','Interação 1x1','Níveis de consciência','Autoridade'];
 const uid=()=>`item-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
@@ -20,21 +21,7 @@ function Requirements({items,title='Informações para este motor',note}:any){
 export function Projects({projects,open,create}:any){
  const [query,setQuery]=useState(''),[filter,setFilter]=useState('Todos');
  const stage=(p:any)=>p.commercialStage==='won'?'Cliente':p.commercialStage==='declined'?'Declinado':p.proposal?'Proposta':p.marketingPlan?'Plano':p.approach?'Abordagem':'Prospecção';
- const next=(p:any)=>{
-  if(p.commercialStage==='declined')return 'Revisar proposta';
-  if(p.commercialStage==='won'){
-   if(!p.persona)return 'Criar persona';
-   if(!p.content?.items?.length)return 'Criar RETINA';
-   if(!(p.metaAds||p.googleAds?.titles?.length))return 'Criar anúncios';
-   if(!p.mediaPlanConfirmed)return 'Distribuir investimento';
-   return 'Acompanhar resultados';
-  }
-  if(!(p.specialty&&p.niche&&p.location))return 'Completar briefing';
-  if(!p.approach)return 'Gerar abordagem';
-  if(!p.marketingPlan)return 'Gerar plano';
-  if(!p.proposal)return 'Gerar proposta';
-  return 'Registrar decisão';
- };
+ const next=(p:any)=>nextStep(p).label;
  const list=projects.filter((p:any)=>`${p.name} ${p.specialty} ${p.location}`.toLowerCase().includes(query.toLowerCase())&&(filter==='Todos'||stage(p)===filter));
  return <><section className="portfolioHero"><div className="eyebrow">NEXUS MARKETING IA</div><h2>Projetos em um fluxo<br/>simples de trabalho.</h2><p>Abra um projeto e continue exatamente de onde parou.</p><button className="primary" onClick={create}>＋ Criar projeto</button><div className="portfolioDecoration" aria-hidden="true">NXS</div></section>
  <div className="portfolioToolbar"><div><h3>Meus projetos <span>{projects.length}</span></h3><p>Prospecção, fechamento e gestão no mesmo lugar.</p></div><div className="portfolioFilters"><Field label="Buscar projeto"><input type="search" placeholder="Nome, especialidade ou cidade" value={query} onChange={e=>setQuery(e.target.value)}/></Field><Field label="Etapa"><select value={filter} onChange={e=>setFilter(e.target.value)}><option>Todos</option><option>Prospecção</option><option>Abordagem</option><option>Plano</option><option>Proposta</option><option>Cliente</option><option>Declinado</option></select></Field></div></div>
