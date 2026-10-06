@@ -113,3 +113,41 @@ test('jornada: só oferece retomar depois de falha com etapas concluídas',()=>{
   assert.equal(journeyResumePoint({...run,status:'failed',done:[...JOURNEY_TASKS]}),null);
   assert.deepEqual(newJourneyRun().tasks,JOURNEY_TASKS);assert.notEqual(newJourneyRun().tasks,JOURNEY_TASKS);
 });
+
+import {navModel} from '../lib/journey.js';
+
+const keys=(g)=>g.items.map(i=>i.key);
+const locked=(g)=>Object.fromEntries(g.items.map(i=>[i.key,i.locked]));
+
+test('menu na prospecção: Persona em Prospecção e toda a Gestão travada',()=>{
+  const [pro,ges]=navModel(projectFactory());
+  assert.equal(pro.label,'Prospecção');assert.equal(ges.label,'Gestão');
+  assert.deepEqual(keys(pro),['persona','brand','plan','prospecting','journey']);
+  assert.ok(pro.items.every(i=>!i.locked));
+  assert.deepEqual(keys(ges),['content','ads','campaigns','home','performance','calendar','readiness','learning']);
+  assert.ok(ges.items.every(i=>/proposta for fechada/.test(i.locked)));
+});
+
+test('menu após fechar: Persona sobe de Prospecção para a Gestão e o fluxo libera aos poucos',()=>{
+  const p=won();p.name='Acme';
+  let [pro,ges]=navModel(p);
+  assert.deepEqual(keys(pro),['brand','plan','prospecting','journey']);
+  assert.deepEqual(keys(ges).slice(0,4),['persona','content','ads','campaigns']);
+  assert.equal(locked(ges).persona,'');
+  assert.match(locked(ges).content,/persona/i);assert.match(locked(ges).ads,/conteúdo/i);assert.match(locked(ges).campaigns,/anúncios/i);
+  assert.match(locked(ges).performance,/investimento/i);
+  p.persona={nome:'A'};[,ges]=navModel(p);
+  assert.equal(locked(ges).content,'');assert.match(locked(ges).ads,/conteúdo/i);
+  p.content={items:[1]};[,ges]=navModel(p);
+  assert.equal(locked(ges).ads,'');assert.match(locked(ges).campaigns,/anúncios/i);
+  p.metaAds={ads:[1]};[,ges]=navModel(p);
+  assert.equal(locked(ges).campaigns,'');assert.match(locked(ges).home,/investimento/i);
+  p.mediaPlanConfirmed=true;[,ges]=navModel(p);
+  assert.ok(ges.items.every(i=>!i.locked),'tudo liberado');
+});
+
+test('menu: projeto declinado mantém a Gestão travada',()=>{
+  const p=projectFactory();p.commercialStage='declined';
+  const [pro,ges]=navModel(p);assert.deepEqual(keys(pro),['persona','brand','plan','prospecting','journey']);
+  assert.ok(ges.items.every(i=>i.locked));
+});

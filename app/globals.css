@@ -201,3 +201,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .docBar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line);box-shadow:0 2px 12px rgba(15,39,71,.08)}
 .docBar small{display:block;font-size:11px;letter-spacing:.14em;color:var(--blue);font-weight:800}.docBar b{font-size:16px}
 .docBar .buttonRow{margin:0}.docFrame{flex:1;width:100%;border:0;background:#dde3ec}
+
+/* Perfil do especialista */
+.specialistCard{margin-top:22px}
+.specialistGroup{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.specialistTitle{margin:0 0 12px;color:var(--blue);font-size:17px}
+.specialistGroup h5{margin:0 0 3px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}

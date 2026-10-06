@@ -12,7 +12,7 @@ import {
   metrics,normalizeRows,parseCSV,projectFactory,projectHealth,qualityEngine,sumUsage,usageSummary
 } from '../lib/core.js';
 import {
-  adsReady,briefReady,journeyResumePoint,journeySteps,lifecycle,newJourneyRun,nextStep,preflight,preflightJourney
+  adsReady,briefReady,journeyResumePoint,journeySteps,lifecycle,navModel,newJourneyRun,nextStep,preflight,preflightJourney
 } from '../lib/journey.js';
 
 type View='projects'|'brand'|'persona'|'plan'|'content'|'ads'|'calendar'|'readiness'|'home'|'journey'|'prospecting'|'campaigns'|'performance'|'learning'|'settings';
@@ -29,7 +29,7 @@ const uid=(p='id')=>`${p}-${Date.now()}-${Math.random().toString(36).slice(2,7)}
 const NAV:[View,string,string,string][]=[
   ['projects','Meus projetos','▦',''],
   ['home','Painel','⌂',''],
-  ['brand','Marca e público','◉',''],
+  ['brand','Empresa e especialista','◉',''],
   ['persona','Persona','◍',''],
   ['plan','Plano de marketing','▤',''],
   ['campaigns','Investimento','◎',''],
@@ -43,13 +43,6 @@ const NAV:[View,string,string,string][]=[
   ['journey','Fluxo do projeto','✧',''],
   ['settings','Configurações','⚙','']
 ];
-
-// Menu do projeto em dois grupos. Prospecção fica sempre ativa; Gestão libera depois do fechamento.
-const NAV_GROUPS:{key:string;label:string;items:View[]}[]=[
-  {key:'prospeccao',label:'Prospecção',items:['persona','brand','plan','prospecting','journey']},
-  {key:'gestao',label:'Gestão',items:['content','ads','campaigns','home','performance','calendar','readiness','learning']}
-];
-const AFTER_INVESTMENT:View[]=['home','performance','calendar','readiness','learning'];
 
 const MODEL_OPTIONS=[
   ['gpt-5.6-luna','Luna · econômico','Alto volume e menor custo'],
@@ -136,6 +129,7 @@ export default function Home(){
     if(task==='deepDive'){d.persona=d.persona||{};d.persona.exploracao=data}
     if(task==='content'){if(d.content)d.contentHistory=[{data:d.content,savedAt:new Date().toISOString()},...(d.contentHistory||[])].slice(0,3);d.content={items:Array.isArray(data)?data:(data.items||[]),generatedAt:new Date().toISOString()};markArtifact(d,'content')}
     if(task==='metaAds'){if(d.metaAds)d.metaAdsHistory=[{data:d.metaAds,savedAt:new Date().toISOString()},...(d.metaAdsHistory||[])].slice(0,3);d.metaAds=data;markArtifact(d,'metaAds')}
+    if(task==='specialist'){if(d.specialist)d.specialistHistory=[{data:d.specialist,savedAt:new Date().toISOString()},...(d.specialistHistory||[])].slice(0,3);d.specialist={...data,generatedAt:new Date().toISOString()}}
     if(task==='extraHooks'){d.metaAds={...(d.metaAds||{}),extraHooks:{...data,generatedAt:new Date().toISOString()}}}
     if(task==='googleKeywords'){if(d.googleAds)d.googleAdsHistory=[{data:d.googleAds,savedAt:new Date().toISOString()},...(d.googleAdsHistory||[])].slice(0,3);d.googleAds={...(d.googleAds||{}),keywords:data.keywords,selected:[],titles:[],descriptions:[],sitelinks:[],strategy:data.strategy};markArtifact(d,'googleAds')}
     if(task==='googleAds'){if(d.googleAds)d.googleAdsHistory=[{data:d.googleAds,savedAt:new Date().toISOString()},...(d.googleAdsHistory||[])].slice(0,3);d.googleAds=data;markArtifact(d,'googleAds')}
@@ -192,12 +186,6 @@ export default function Home(){
   const health=projectHealth(p);
   const stage=lifecycle(p);
   const inProject=projectOpen&&view!=='projects'&&view!=='settings';
-  const lockReason=(group:string,key:View)=>{
-    if(group==='prospeccao')return '';
-    if(stage!=='won')return 'Libera quando a proposta for fechada.';
-    if(AFTER_INVESTMENT.includes(key)&&!p.mediaPlanConfirmed)return 'Libera depois de confirmar o investimento.';
-    return '';
-  };
   const nx=nextStep(p);
   const afterPersona=stage==='won'?{label:'Continuar para RETINA →',go:()=>navigate('content')}:{label:`Continuar: ${nx.label} →`,go:()=>navigate(nx.view as View,nx.sub)};
 
@@ -210,9 +198,9 @@ export default function Home(){
       {inProject&&<div className="projectNavigation">
         <div className="projectContext"><small>PROJETO ABERTO</small><b title={p.name}>{p.name}</b></div>
         <nav aria-label={`Áreas de ${p.name}`}>
-          {NAV_GROUPS.map(g=><div key={g.key} className="navGroup" role="group" aria-label={g.label}>
+          {navModel(p).map(g=><div key={g.key} className="navGroup" role="group" aria-label={g.label}>
             <div className="navGroupTitle">{g.label}{g.key==='gestao'&&stage!=='won'&&<em>libera após fechar</em>}</div>
-            {g.items.map(key=>{const item=NAV.find(x=>x[0]===key)!;const reason=lockReason(g.key,key);return <button key={key} aria-current={view===key?'page':undefined} aria-disabled={!!reason} disabled={!!reason} title={reason||undefined} className={(view===key?'active ':'')+(reason?'locked':'')} onClick={()=>navigate(key)}><i>{reason?'🔒':item[2]}</i><span><b>{item[1]}</b></span></button>})}
+            {g.items.map(({key,locked:reason})=>{const item=NAV.find(x=>x[0]===key)!;return <button key={key} aria-current={view===key?'page':undefined} aria-disabled={!!reason} disabled={!!reason} title={reason||undefined} className={(view===key?'active ':'')+(reason?'locked':'')} onClick={()=>navigate(key as View)}><i>{reason?'🔒':item[2]}</i><span><b>{item[1]}</b></span></button>})}
           </div>)}
         </nav>
         <div className="sidebarFoot"><div className="healthMini"><span>Estrutura do projeto</span><b>{health.score}%</b></div><div className="progress"><i style={{width:health.score+'%'}}/></div><small>{health.stale.length?`${health.stale.length} item(ns) desatualizado(s)`:'Base consistente'}</small></div>
@@ -240,7 +228,7 @@ export default function Home(){
         {engineError&&<EngineErrorBanner error={engineError} onSettings={()=>{setEngineError(null);navigate('settings')}} onDismiss={()=>setEngineError(null)} onRetry={()=>{const e=engineError;setEngineError(null);if(e.task==='journey')setJourneyDialog(true);else runEngine(e.task,e.input)}}/>}
         {inProject&&<ProjectFlow p={p} view={view} sub={sub} go={navigate}/>}
         {view==='projects'&&<Projects projects={projects} open={openProject} create={()=>setProjectDialog(true)}/>}
-        {view==='brand'&&<BrandBrief p={p} update={update} onContinue={()=>stage==='won'?navigate('persona'):navigate('prospecting','approach')}/>}
+        {view==='brand'&&<BrandBrief p={p} update={update} run={runEngine} onContinue={()=>stage==='won'?navigate('persona'):navigate('prospecting','approach')}/>}
         {view==='persona'&&<PersonaWorkspace key={pid} p={p} update={update} run={runEngine} continueLabel={afterPersona.label} onContinue={afterPersona.go}/>}
         {view==='plan'&&<PlanWorkspace key={pid} p={p} update={update} run={runEngine} settings={globalSettings} onContinue={()=>navigate('prospecting','proposal')}/>}
         {view==='content'&&<ContentWorkspace key={pid} p={p} update={update} run={runEngine} onContinue={()=>navigate('ads','meta')}/>}
