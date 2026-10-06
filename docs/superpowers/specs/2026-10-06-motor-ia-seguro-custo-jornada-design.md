@@ -93,6 +93,16 @@ p.usage = { calls, failedCalls, inputTokens, outputTokens,
 - Diálogo da jornada substitui o `confirm()`: mostra as 4 etapas, o nº de chamadas, o que será substituído (histórico preservado) e, se houver `journeyRun` interrompida, o botão **"Retomar de {etapa}"** ao lado de "Recomeçar".
 - Overlay de carregamento ganha **Cancelar** (`AbortController` guardado em `useRef`). Cancelar durante a jornada grava `status:'cancelled'` e mantém as etapas já concluídas.
 
+### Ajustes após ler o restante do código (2026-10-06)
+
+Três fatos encontrados na leitura de `page.tsx` e `workspaces.tsx` alteram a execução, não os objetivos:
+
+1. **A "Jornada IA completa" não tem botão hoje.** `runEssential` existe e é passada como prop a `Dashboard` e `Journey`, mas nenhuma das duas a usa. O botão foi retirado num redesenho anterior (commit `2533b43`). Para que checkpoint e retomada sejam testáveis, a jornada volta como **card opcional na tela "Fluxo do projeto", só para cliente ativo**, atrás do diálogo de confirmação. Nada executa sem o clique. É um ponto de decisão do produto e fica fácil de remover da PR (um card e o diálogo).
+2. **Os botões de gerar já ficam desabilitados com checklist de requisitos** em cada tela. Por isso o diálogo "Antes de gerar" é a rede de segurança de `runEngine` (chamadas vindas da jornada, de atalhos e de estados que a tela não previu), e não a primeira linha de defesa.
+3. **Erros do motor viram toast que some em 2,8 s.** Mensagens como "anúncios fora dos limites de caracteres" desaparecem antes de serem lidas, o que contradiz o critério 2. Os erros do motor passam a um **banner fixo** com "Tentar novamente" (repetição manual, o custo é visível) ou "Abrir configurações" quando a causa é chave, acesso, saldo ou modelo. Não é o reparo automático excluído do escopo.
+
+A tela inicial de um cliente ativo sem resultados passa a ser "Fontes". As etapas em `journeySteps` carregam rótulo curto (trilho), título (Fluxo), texto e destino.
+
 ## Dados
 
 Campos novos e opcionais no projeto: `usage`, `journeyRun`, `generations[].usage`. `schemaVersion` não muda; o código aceita a ausência dos três. A exportação JSON os inclui.
