@@ -7,6 +7,8 @@ import {PreflightDialog,JourneyDialog,UsageCard,EngineErrorBanner} from '../comp
 import {buildProposalDocument} from '../lib/proposal-document.js';
 import {paletteFromImage} from '../lib/palette.js';
 import {DocumentPreview,DocumentCard} from '../components/doc-preview';
+import {PostStudio} from '../components/post-studio';
+import {addPostSet,adKey,normalizePosts} from '../lib/posts.js';
 import {
   ENGINE_LABELS,addUsage,artifactStatus,calcBudget,evaluateExperiment,localFindings,markArtifact,
   metrics,normalizeRows,parseCSV,projectFactory,projectHealth,qualityEngine,sumUsage,usageSummary
@@ -66,6 +68,7 @@ export default function Home(){
   const [projects,setProjects]=useState<any[]>([]); const [pid,setPid]=useState(''); const [ready,setReady]=useState(false);
   const [projectDialog,setProjectDialog]=useState(false); const [mobileMenu,setMobileMenu]=useState(false);
   const [toast,setToast]=useState(''); const [busy,setBusy]=useState<{task:string;label:string;step?:string;cancellable?:boolean}|null>(null);
+  const [studio,setStudio]=useState<number|null>(null);
   const [engineError,setEngineError]=useState<{task:string;label:string;message:string;code?:string;detail?:string;input:any}|null>(null);
   const [preflightDialog,setPreflightDialog]=useState<{title:string;items:any[]}|null>(null);
   const [journeyDialog,setJourneyDialog]=useState(false);
@@ -115,14 +118,14 @@ export default function Home(){
   const callAI=async(task:string,project:any,input:any={},signal?:AbortSignal)=>{
     if(!ai.apiKey)throw new Error('Conecte sua chave da OpenAI em Configurações.');
     let r:Response;
-    try{r=await fetch('/api/ai',{method:'POST',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:ai.apiKey,model:ai.model,task,project,input:task==='marketingPlan'?{...input,mediaAllocation:calcBudget(project.budget?.amount,project.budget?.demand,project.budget?.level,project.budget?.gbpPct,project.budget?.googleOverride)}:input,reasoning:task==='searchTerms'?'low':'medium'})})}
+    try{r=await fetch('/api/ai',{method:'POST',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:ai.apiKey,model:ai.model,task,project,input:task==='marketingPlan'?{...input,mediaAllocation:calcBudget(project.budget?.amount,project.budget?.demand,project.budget?.level,project.budget?.gbpPct,project.budget?.googleOverride)}:input,reasoning:task==='searchTerms'||task==='posts'?'low':'medium'})})}
     catch{throw Object.assign(new Error(signal?.aborted?'Geração cancelada.':'Não consegui falar com o servidor do Nexus. Confira a conexão e tente novamente.'),{code:signal?.aborted?'cancelled':'network'})}
     const j=await r.json().catch(()=>null);
     if(!j)throw Object.assign(new Error(r.status===504?'A geração passou do tempo limite do servidor. Tente novamente ou use o modelo Luna.':'O servidor do Nexus não respondeu corretamente. Tente novamente.'),{code:'server'});
     if(!r.ok||!j.ok)throw Object.assign(new Error(j.error||'Falha ao executar motor'),{usage:j.usage||null,code:j.code,detail:j.detail});
     return j;
   };
-  const applyResult=(d:any,task:string,data:any,usage?:any)=>{
+  const applyResult=(d:any,task:string,data:any,usage?:any,input?:any)=>{
     d.generations=[{id:uid('gen'),task,at:new Date().toISOString(),model:ai.model,usage:usage||null},...(d.generations||[])].slice(0,50);
     if(usage)addUsage(d,task,usage);
     if(task==='persona'){if(d.persona)d.personaHistory=[{data:d.persona,savedAt:new Date().toISOString()},...(d.personaHistory||[])].slice(0,3);d.persona=data;markArtifact(d,'persona')}
@@ -136,6 +139,7 @@ export default function Home(){
     if(task==='approach'){d.approach=data;markArtifact(d,'approach')}
     if(task==='marketingPlan'){d.marketingPlan=data;markArtifact(d,'marketingPlan')}
     if(task==='proposal'){d.proposal={...data,status:d.proposal?.status||'Em negociação'};d.commercialStage='proposal';d.status='Proposta';markArtifact(d,'proposal')}
+    if(task==='posts'){d.metaAds={...(d.metaAds||{}),adPosts:addPostSet(d.metaAds?.adPosts,adKey(Number(input?.adIndex)),normalizePosts(data).posts)}}
     if(task==='searchTerms'){d.searchTermClassifications=data}
     if(task==='optimization'){d.optimization=data;markArtifact(d,'optimization')}
   };
@@ -147,12 +151,18 @@ export default function Home(){
     setEngineError(null);
     const ctl=new AbortController();abortRef.current=ctl;
     setBusy({task,label:ENGINE_LABELS[task]||'Motor de IA',cancellable:true});
-    try{const snap=clone(p);const j=await callAI(task,snap,input,ctl.signal);if(task==='proposal'){j.data.investment={setup:BRL.format(Number(input.setup)||0),monthly:BRL.format(Number(input.monthly)||0),media:String(input.media||'')}}update(d=>{if(task==='proposal')d.proposalInputs={setup:Number(input.setup)||0,monthly:Number(input.monthly)||0,media:String(input.media||'')};applyResult(d,task,j.data,j.usage)},success||`${ENGINE_LABELS[task]||'Motor'} concluído`);setAI(x=>({...x,connected:true}))}
+    try{const snap=clone(p);const j=await callAI(task,snap,input,ctl.signal);if(task==='proposal'){j.data.investment={setup:BRL.format(Number(input.setup)||0),monthly:BRL.format(Number(input.monthly)||0),media:String(input.media||'')}}update(d=>{if(task==='proposal')d.proposalInputs={setup:Number(input.setup)||0,monthly:Number(input.monthly)||0,media:String(input.media||'')};applyResult(d,task,j.data,j.usage,input)},success||`${ENGINE_LABELS[task]||'Motor'} concluído`);setAI(x=>({...x,connected:true}))}
     catch(e:any){
       if(e.usage)update(d=>{addUsage(d,task,e.usage,{failed:true})});
       if(e.code==='cancelled')setToast('Geração cancelada.');
       else setEngineError({task,label:ENGINE_LABELS[task]||'Motor de IA',message:e.message||'Falha no motor de IA.',code:e.code,detail:e.detail,input});
     }finally{setBusy(null);abortRef.current=null}
+  };
+  useEffect(()=>{setStudio(null)},[view,pid]);
+  const generatePosts=(i:number)=>{if(!ai.apiKey)setStudio(null);runEngine('posts',{adIndex:i},'5 postagens prontas')};
+  const openStudio=(i:number)=>{
+    if(!(p?.metaAds?.adPosts?.[adKey(i)]?.sets?.length)){generatePosts(i);if(!ai.apiKey)return}
+    setStudio(i);
   };
   const executeJourney=async(resume:boolean)=>{
     setJourneyDialog(false);
@@ -225,7 +235,7 @@ export default function Home(){
 
       <div className="page">
         {!ai.apiKey&&view!=='settings'&&view!=='projects'&&<div className="apiBanner"><div><b>Ative os motores de IA</b><span>Conecte a OpenAI quando quiser gerar os materiais do projeto.</span></div><button onClick={()=>navigate('settings')}>Conectar OpenAI</button></div>}
-        {engineError&&<EngineErrorBanner error={engineError} onSettings={()=>{setEngineError(null);navigate('settings')}} onDismiss={()=>setEngineError(null)} onRetry={()=>{const e=engineError;setEngineError(null);if(e.task==='journey')setJourneyDialog(true);else runEngine(e.task,e.input)}}/>}
+        {engineError&&!(studio!==null&&engineError.task==='posts')&&<EngineErrorBanner error={engineError} onSettings={()=>{setEngineError(null);navigate('settings')}} onDismiss={()=>setEngineError(null)} onRetry={()=>{const e=engineError;setEngineError(null);if(e.task==='journey')setJourneyDialog(true);else runEngine(e.task,e.input)}}/>}
         {inProject&&<ProjectFlow p={p} view={view} sub={sub} go={navigate}/>}
         {view==='projects'&&<Projects projects={projects} open={openProject} create={()=>setProjectDialog(true)}/>}
         {view==='brand'&&<BrandBrief p={p} update={update} run={runEngine} onContinue={()=>stage==='won'?navigate('persona'):navigate('prospecting','approach')}/>}
@@ -234,7 +244,7 @@ export default function Home(){
         {view==='content'&&<ContentWorkspace key={pid} p={p} update={update} run={runEngine} onContinue={()=>navigate('ads','meta')}/>}
         {view==='calendar'&&<CalendarWorkspace key={pid} p={p} update={update}/>}
         {view==='readiness'&&<Readiness p={p} update={update}/>}
-        {view==='ads'&&<><Tabs items={[["meta","Meta · despertar interesse"],["google","Google · quem já procura"]]} value={sub.ads||'meta'} onChange={(t:string)=>setSub(x=>({...x,ads:t}))}/>{sub.ads==='google'?<GoogleWorkspace key={pid} p={p} update={update} run={runEngine}/>:<MetaAds p={p} update={update} run={runEngine}/>} {adsReady(p)&&<div className="flowFooter"><div><b>Anúncios prontos para testar</b><span>Agora defina quanto investir em cada canal.</span></div><button className="primary" onClick={()=>navigate('campaigns','planning')}>Continuar para investimento →</button></div>}</>}
+        {view==='ads'&&<><Tabs items={[["meta","Meta · despertar interesse"],["google","Google · quem já procura"]]} value={sub.ads||'meta'} onChange={(t:string)=>setSub(x=>({...x,ads:t}))}/>{sub.ads==='google'?<GoogleWorkspace key={pid} p={p} update={update} run={runEngine}/>:<MetaAds p={p} update={update} run={runEngine} onPosts={openStudio}/>} {adsReady(p)&&<div className="flowFooter"><div><b>Anúncios prontos para testar</b><span>Agora defina quanto investir em cada canal.</span></div><button className="primary" onClick={()=>navigate('campaigns','planning')}>Continuar para investimento →</button></div>}</>}
         {view==='home'&&<Dashboard p={p} health={health} go={navigate}/>}
         {view==='journey'&&<Journey p={p} go={navigate} ai={ai} onJourney={()=>setJourneyDialog(true)}/>}
         {view==='prospecting'&&<Prospecting key={pid} p={p} tab={sub.prospecting} setTab={(v:string)=>setSub(s=>({...s,prospecting:v}))} run={runEngine} settings={globalSettings} update={update} go={navigate}/>}
@@ -246,6 +256,7 @@ export default function Home(){
     </main>
     {projectDialog&&<ProjectDialog save={createProject} close={()=>setProjectDialog(false)}/>}
     {toast&&<div role="status" className="toast">{toast}</div>}
+    {studio!==null&&view==='ads'&&p?.metaAds?.ads?.[studio]&&<PostStudio p={p} adIndex={studio} error={engineError?.task==='posts'?engineError:null} onClose={()=>setStudio(null)} onGenerate={()=>{setEngineError(null);generatePosts(studio)}} onSettings={()=>{setEngineError(null);setStudio(null);navigate('settings')}} onDismissError={()=>setEngineError(null)}/>}
     {busy&&<div className="busyOverlay"><div className="busyCard"><div className="orb">✦</div><small>NEXUS AI ENGINE</small><h3>{busy.label}</h3><p>{busy.step||'Processando contexto, estratégia e estrutura de saída...'}</p><div className="loader"><i/></div><span>Você pode aguardar nesta tela. O resultado será salvo no projeto.</span>{busy.cancellable&&<button className="secondary busyCancel" onClick={()=>abortRef.current?.abort()}>Cancelar geração</button>}</div></div>}
     {preflightDialog&&<PreflightDialog title={preflightDialog.title} items={preflightDialog.items} onGo={gotoItem} onClose={()=>setPreflightDialog(null)}/>}
     {journeyDialog&&<JourneyDialog p={p} gate={preflightJourney(p)} resumeTask={journeyResumePoint(p.journeyRun)} onRun={executeJourney} onGo={gotoItem} onClose={()=>setJourneyDialog(false)}/>}
@@ -320,12 +331,12 @@ function ProposalResult({data,project,agency}:any){
  </div>}
 function DocList({title,items}:any){if(!items?.length)return null;return <div className="docList"><h4>{title}</h4><ul>{items.map((x:string,i:number)=><li key={i}>{x}</li>)}</ul></div>}
 
-function MetaAds({p,update,run}:any){
+function MetaAds({p,update,run,onPosts}:any){
  const status=artifactStatus(p,'metaAds');const ai=p.aiInputs||{};const setAI=(k:string,v:any)=>update((d:any)=>{d.aiInputs={...(d.aiInputs||{}),[k]:v}});
  const ready=!!(p.persona&&(ai.adOffer||p.offers||p.services||p.products)?.trim()&&(ai.adDestination||p.contactDestination)?.trim()&&ai.conversionAction?.trim());
  return <><div className="sectionIntro"><div><div className="eyebrow">ANÚNCIOS / META</div><h2>Oferta + destino + ação + persona.</h2><p>O motor só gera os quatro anúncios quando as quatro respostas exigidas pelo prompt estiverem disponíveis.</p></div><button className="primary" disabled={!ready} onClick={()=>run('metaAds')}>✦ {p.metaAds?'Regenerar 4 anúncios':'Gerar 4 anúncios'}</button></div>
  <Card eyebrow="ANTES DE GERAR" title="Informações obrigatórias"><Field label="O que você está anunciando"><textarea value={ai.adOffer||''} onChange={e=>setAI('adOffer',e.target.value)} placeholder={p.offers||p.services||'Descreva produto, serviço, oferta ou evento com detalhes.'}/></Field><div className="form2"><Field label="Destino após o clique"><input value={ai.adDestination||p.contactDestination||''} onChange={e=>setAI('adDestination',e.target.value)} placeholder="WhatsApp, página, formulário..."/></Field><Field label="Ação desejada no destino"><input value={ai.conversionAction||''} onChange={e=>setAI('conversionAction',e.target.value)} placeholder="Enviar mensagem, pedir orçamento..."/></Field></div><div className="requirementGrid"><div className={(ai.adOffer||p.offers||p.services||p.products)?'ready':'missing'}><span>{(ai.adOffer||p.offers||p.services||p.products)?'✓':'○'}</span><b>Oferta detalhada</b></div><div className={(ai.adDestination||p.contactDestination)?'ready':'missing'}><span>{(ai.adDestination||p.contactDestination)?'✓':'○'}</span><b>Destino</b></div><div className={ai.conversionAction?'ready':'missing'}><span>{ai.conversionAction?'✓':'○'}</span><b>Ação</b></div><div className={p.persona?'ready':'missing'}><span>{p.persona?'✓':'○'}</span><b>Persona</b></div></div></Card>
- {!p.metaAds?<Empty title="Meta Ads ainda não gerado" text="Complete as quatro informações e gere os anúncios pelo Método GCC."/>:<div className="adsGrid">{(p.metaAds.ads||[]).map((a:any,i:number)=><Card key={i} eyebrow={`ANÚNCIO ${i+1}`} title={a.angle}><div className="adPreview"><small>GANCHO</small><b>{a.hooks?.pergunta||a.hooks?.contraintuitiva}</b><p>{a.body}</p><button>{a.cta}</button></div><div className="hookList">{Object.entries(a.hooks||{}).map(([k,v]:any)=><div key={k}><span>{k}</span><p>{v}</p></div>)}</div>{a.awareness&&<div className="hypothesis">Nível de consciência: {a.awareness}</div>}<StatusDot status={status}/></Card>)}</div>}
+ {!p.metaAds?<Empty title="Meta Ads ainda não gerado" text="Complete as quatro informações e gere os anúncios pelo Método GCC."/>:<div className="adsGrid">{(p.metaAds.ads||[]).map((a:any,i:number)=><Card key={i} eyebrow={`ANÚNCIO ${i+1}`} title={a.angle}><div className="adPreview"><small>GANCHO</small><b>{a.hooks?.pergunta||a.hooks?.contraintuitiva}</b><p>{a.body}</p><button>{a.cta}</button></div><div className="hookList">{Object.entries(a.hooks||{}).map(([k,v]:any)=><div key={k}><span>{k}</span><p>{v}</p></div>)}</div>{a.awareness&&<div className="hypothesis">Nível de consciência: {a.awareness}</div>}<StatusDot status={status}/><div className="adActions"><button className="primary" onClick={()=>onPosts(i)}>✦ Gerar postagem</button>{(p.metaAds.adPosts?.[adKey(i)]?.sets?.length||0)>0&&<span className="muted">{p.metaAds.adPosts[adKey(i)].sets.length*5} postagens salvas</span>}</div></Card>)}</div>}
  {p.metaAds&&<Card eyebrow="PASSO OPCIONAL DO PROMPT" title="20 ganchos extras" action={<button className="secondary" disabled={(p.metaAds.ads||[]).length<4} onClick={()=>run('extraHooks')}>✦ {p.metaAds.extraHooks?'Gerar novos ganchos':'Sim, listar 20 ganchos'}</button>}><p className="muted">Você gostaria que eu listasse mais 20 exemplos de ganchos que você pode utilizar para estes anúncios ou então para colocar em imagens?</p>{p.metaAds.extraHooks&&<div className="grid2"><CopyBlock title="10 ganchos para anúncios em vídeo" hint="Distribuídos entre pergunta, história, sacada contraintuitiva e segmentado." lines={(p.metaAds.extraHooks.videoHooks||[]).map((h:any,i:number)=>`${i+1}. [${h.type}] ${h.text}`)}/><CopyBlock title="10 ganchos para imagens" hint="Headlines curtas para anúncios em imagem." lines={(p.metaAds.extraHooks.imageHeadlines||[]).map((h:string,i:number)=>`${i+1}. ${h}`)}/></div>}</Card>}
  </>;
 }
