@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {calcBudget,investmentLevel,projectFactory,markArtifact,artifactStatus} from '../lib/core.js';
+import {calcBudget,investmentLevel,projectFactory,markArtifact,artifactStatus,matrixTable,DEMAND_LABELS,LEVEL_LABELS} from '../lib/core.js';
 import {validateGeneration} from '../lib/validation.js';
 import {buildPrompt} from '../lib/ai-prompts.js';
 test('matriz das nove combinações e reconciliação de verba',()=>{
@@ -16,3 +16,16 @@ test('ajuste manual e limites preservam totais',()=>{const b=calcBudget(2000,'bu
 test('troca de persona desatualiza peças dependentes e a verba não',()=>{const p=projectFactory();p.persona={nome:'A'};markArtifact(p,'content');p.persona={nome:'B'};assert.equal(artifactStatus(p,'content'),'stale');markArtifact(p,'content');p.budget.amount=5000;p.budget.gbpPct=10;assert.equal(artifactStatus(p,'content'),'current')});
 test('Google começa em palavras-chave e exige textos dentro dos limites',()=>{assert.ok(buildPrompt('googleKeywords',projectFactory()).includes('Não avance para títulos'));const data={titles:Array(20).fill('Vistoria técnica'),descriptions:Array(8).fill('Agende sua vistoria.'),phraseMatch:[],exactMatch:[]};assert.equal(validateGeneration('googleAds',data),data);data.titles[1]='A'.repeat(31);assert.throws(()=>validateGeneration('googleAds',data));assert.throws(()=>validateGeneration('googleKeywords',{keywords:{highIntent:['apenas um']}}))});
 test('RETINA e Meta rejeitam entregas incompletas',()=>{assert.throws(()=>validateGeneration('content',[]));assert.throws(()=>validateGeneration('metaAds',{ads:[]}))});
+test('matriz completa: 9 combinações coerentes com o cálculo de verba',()=>{
+ const rows=matrixTable();
+ assert.equal(rows.length,9);
+ assert.equal(new Set(rows.map(r=>r.demand+'/'+r.level)).size,9);
+ for(const r of rows){
+  assert.equal(r.google+r.meta,100,r.demand+'/'+r.level);
+  assert.ok(r.campaigns.length>0&&r.count&&r.conversion>0,r.demand+'/'+r.level);
+  assert.ok(DEMAND_LABELS[r.demand]&&LEVEL_LABELS[r.level]);
+  const b=calcBudget(1000,r.demand,r.level);
+  assert.equal(b.googlePct,r.google);assert.deepEqual(b.campaigns,r.campaigns);assert.equal(b.count,r.count);assert.equal(b.conversionPct,r.conversion);
+ }
+ rows[0].campaigns.push('x');assert.ok(!matrixTable()[0].campaigns.includes('x'),'não expõe o estado interno da matriz');
+});

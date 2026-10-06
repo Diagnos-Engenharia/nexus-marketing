@@ -105,6 +105,23 @@ Três fatos encontrados na leitura de `page.tsx` e `workspaces.tsx` alteram a ex
 
 A tela inicial de um cliente ativo sem resultados passa a ser "Fontes". As etapas em `journeySteps` carregam rótulo curto (trilho), título (Fluxo), texto e destino.
 
+## Adendo: estrutura Prospecção × Gestão (2026-10-06, segunda rodada)
+
+Pedido: dentro do projeto, o menu lateral deve ter **Prospecção** (Persona, Marca e público, Plano de marketing, Comercial, Fluxo) e **Gestão** (Conteúdo, Anúncios com Google Ads e Meta, e toda a matriz de orçamento dos anúncios). Persona deve sair completa com um clique em "Criar persona", como no "Motor de Marketing IA" (artifact). Os quatro prompts do curso (persona, conteúdo RETINA, anúncios GCC, Google "Bolo de cenoura fofinho") definem o que cada tela precisa mostrar.
+
+Correção de premissa: o "motor de IA que temos" é o artifact **Motor de Marketing IA** (Prospecção + Gestão, 16 abas). A comparação da primeira rodada usou a Dianna como referência. Os ganhos de segurança, uso e jornada continuam válidos, porque são lacunas reais do NEXUS, mas a referência de estrutura é o artifact.
+
+Decisões (opção recomendada em todas):
+
+1. **Menu em dois grupos.** Prospecção sempre ativa. Gestão aparece travada (com cadeado e dica) até a proposta ser fechada; os itens de acompanhamento (Painel, Resultados, Calendário, Preparar canais, Aprendizados) seguem liberando após confirmar o investimento, como hoje. Itens de Prospecção continuam acessíveis depois do fechamento (consulta e reimpressão da proposta).
+2. **Persona vira uma tela própria em Prospecção** (`view: 'persona'`), disponível antes do fechamento. `persona` e `deepDive` deixam de exigir "proposta fechada"; conteúdo, anúncios e Jornada continuam exigindo. A persona é opcional no fluxo de prospecção (não bloqueia Abordagem), mas o Fluxo sugere criá-la antes do plano.
+3. **Persona completa e expandida**, na ordem do prompt 1: retrato, problema e obstáculo, emoções, medos e relacionamentos, passado e rejeições, decisão de compra, os 5 níveis de consciência (8 campos cada) e o aprofundamento da Regra 3 ("Você gostaria de levantar informações sobre medos, dores, desejos e objeções?"). Campos desconhecidos aparecem em "Outros campos"; nada fica escondido. Botão para copiar tudo.
+4. **Matriz de orçamento completa** na tela Investimento: as 9 combinações (3 cenários × 3 faixas) com Google %, Meta %, campanhas, quantidade e a coluna "Conversão" da matriz de referência, destacando a combinação ativa. O significado exato da coluna "Conversão" vem do documento de referência (p. 101), que não consegui localizar no ebook enviado; ela é exibida como "Conversão (matriz)" sem interpretação adicional.
+5. **Meta Ads: 20 ganchos extras** (passo opcional do prompt 3): nova tarefa `extraHooks` (10 ganchos de vídeo tipados + 10 headlines de imagem), só depois de existirem os 4 anúncios, sem substituí-los.
+6. **Google Ads: blocos para copiar** no formato do prompt 4 (20 principais, 10 complementares, 10 negativas, frase, exata, títulos, descrições), um item por linha.
+
+Fora do escopo desta rodada: reescrever os prompts-fonte (os textos dos PDFs já estão neles), validar a distribuição dos 20 títulos (3 benefício, 3 vantagem, 2 marca, 2 CTA) e trazer as outras abas do artifact (Diário, Experimentos etc.).
+
 ## Dados
 
 Campos novos e opcionais no projeto: `usage`, `journeyRun`, `generations[].usage`. `schemaVersion` não muda; o código aceita a ausência dos três. A exportação JSON os inclui.

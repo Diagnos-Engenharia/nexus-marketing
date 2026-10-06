@@ -30,7 +30,7 @@ test('declinado usa a fase de prospecção com a decisão concluída',()=>{
 test('nextStep segue a ordem e abre Fontes para importar resultados',()=>{
   const p=won();
   p.name='Acme';p.specialty='x';p.niche='y';p.location='z';
-  assert.deepEqual([nextStep(p).view,nextStep(p).sub],['brand','persona']);
+  assert.deepEqual([nextStep(p).view,nextStep(p).sub],['persona',undefined]);
   p.persona={};assert.equal(nextStep(p).view,'content');
   p.content={items:[1]};assert.deepEqual([nextStep(p).view,nextStep(p).sub],['ads','meta']);
   p.metaAds={};assert.deepEqual([nextStep(p).view,nextStep(p).sub],['campaigns','planning']);
@@ -43,12 +43,27 @@ test('nextStep segue a ordem e abre Fontes para importar resultados',()=>{
   const dec=projectFactory();dec.commercialStage='declined';assert.deepEqual([nextStep(dec).view,nextStep(dec).sub],['prospecting','proposal']);
 });
 
-test('preflight: tarefas de cliente ativo exigem proposta fechada',()=>{
-  const p=projectFactory();p.niche='n';
-  const r=preflight('persona',p);
-  assert.equal(r.ok,false);assert.equal(r.first.label,'Proposta fechada (cliente ativo)');assert.equal(r.first.view,'prospecting');
-  const w=won();w.niche='n';assert.equal(preflight('persona',w).ok,true);
-  assert.equal(preflight('persona',won()).ok,false);
+test('preflight: conteúdo, anúncios e ganchos extras exigem proposta fechada',()=>{
+  const p=projectFactory();p.niche='n';p.persona={};p.aiInputs.creatorName='Ana';
+  for(const task of ['content','metaAds','extraHooks','googleKeywords','googleAds']){
+    const r=preflight(task,p,{selectedKeywords:['a','b','c','d','e']});
+    assert.equal(r.ok,false,task);assert.equal(r.items[0].label,'Proposta fechada (cliente ativo)',task);assert.equal(r.items[0].view,'prospecting',task);
+  }
+  const w=won();w.niche='n';w.persona={};w.aiInputs.creatorName='Ana';assert.equal(preflight('content',w).ok,true);
+});
+
+test('persona e aprofundamento funcionam já na prospecção',()=>{
+  const p=projectFactory();assert.equal(lifecycle(p),'prospecting');
+  assert.equal(preflight('persona',p).ok,true);
+  p.niche='';const r=preflight('persona',p);assert.equal(r.ok,false);assert.equal(r.first.label,'Nicho / público-alvo');
+  const q=projectFactory();assert.equal(preflight('deepDive',q).ok,false);assert.equal(preflight('deepDive',q).first.view,'persona');
+  q.persona={nome:'A'};assert.equal(preflight('deepDive',q).ok,true);
+});
+
+test('ganchos extras exigem os 4 anúncios Meta',()=>{
+  const w=won();assert.equal(preflight('extraHooks',w).first.label,'4 anúncios Meta gerados');
+  w.metaAds={ads:[1,2,3]};assert.equal(preflight('extraHooks',w).ok,false);
+  w.metaAds={ads:[1,2,3,4]};assert.equal(preflight('extraHooks',w).ok,true);
 });
 
 test('preflight por tarefa lista cada requisito',()=>{
