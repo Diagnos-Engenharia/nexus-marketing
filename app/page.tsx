@@ -1,13 +1,17 @@
 'use client';
 
 import Image from 'next/image';
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {Projects,ProjectDialog,BrandBrief,MediaPlanning,PlanWorkspace,PersonaWorkspace,ContentWorkspace,CalendarWorkspace,Readiness,GoogleWorkspace} from '../components/workspaces';
+import {PreflightDialog,JourneyDialog,UsageCard,EngineErrorBanner} from '../components/engine-ui';
 import {printProposal} from '../lib/print-docs.js';
 import {
-  ENGINE_LABELS,artifactStatus,calcBudget,evaluateExperiment,localFindings,markArtifact,
-  metrics,normalizeRows,parseCSV,projectFactory,projectHealth,qualityEngine
+  ENGINE_LABELS,addUsage,artifactStatus,calcBudget,evaluateExperiment,localFindings,markArtifact,
+  metrics,normalizeRows,parseCSV,projectFactory,projectHealth,qualityEngine,sumUsage,usageSummary
 } from '../lib/core.js';
+import {
+  adsReady,briefReady,journeyResumePoint,journeySteps,lifecycle,newJourneyRun,nextStep,preflight,preflightJourney
+} from '../lib/journey.js';
 
 type View='projects'|'brand'|'plan'|'content'|'ads'|'calendar'|'readiness'|'home'|'journey'|'prospecting'|'campaigns'|'performance'|'learning'|'settings';
 type AIConfig={apiKey:string;model:string;remember:boolean;connected:boolean;lastTest?:string};
@@ -43,28 +47,6 @@ const MODEL_OPTIONS=[
   ['gpt-5.6-sol','Sol · máxima qualidade','Mais forte para estratégia e raciocínio']
 ];
 
-function lifecycle(p:any){
-  if(p?.commercialStage==='won'||p?.proposal?.status==='Fechado')return 'won';
-  if(p?.commercialStage==='declined'||p?.proposal?.status==='Declinado')return 'declined';
-  return p?.proposal?'proposal':'prospecting';
-}
-function briefReady(p:any){return !!(p?.name?.trim()&&p?.specialty?.trim()&&p?.niche?.trim()&&p?.location?.trim())}
-function adsReady(p:any){return !!(p?.metaAds||p?.googleAds?.titles?.length)}
-function nextRoute(p:any):[View,string?]{
-  const stage=lifecycle(p);
-  if(stage==='declined')return ['prospecting','proposal'];
-  if(stage==='won'){
-    if(!p.persona)return ['brand','persona'];
-    if(!p.content?.items?.length)return ['content'];
-    if(!adsReady(p))return ['ads','meta'];
-    if(!p.mediaPlanConfirmed)return ['campaigns','planning'];
-    return ['performance','overview'];
-  }
-  if(!briefReady(p))return ['brand','brief'];
-  if(!p.approach)return ['prospecting','approach'];
-  if(!p.marketingPlan)return ['plan'];
-  return ['prospecting','proposal'];
-}
 
 
 function Card({title,eyebrow,children,action,className=''}:any){return <section className={`card ${className}`}><div className="cardHead"><div>{eyebrow&&<div className="eyebrow">{eyebrow}</div>}{title&&<h3>{title}</h3>}</div>{action}</div>{children}</section>}
@@ -80,7 +62,11 @@ export default function Home(){
   const [projectOpen,setProjectOpen]=useState(false);
   const [projects,setProjects]=useState<any[]>([]); const [pid,setPid]=useState(''); const [ready,setReady]=useState(false);
   const [projectDialog,setProjectDialog]=useState(false); const [mobileMenu,setMobileMenu]=useState(false);
-  const [toast,setToast]=useState(''); const [busy,setBusy]=useState<{task:string;label:string;step?:string}|null>(null);
+  const [toast,setToast]=useState(''); const [busy,setBusy]=useState<{task:string;label:string;step?:string;cancellable?:boolean}|null>(null);
+  const [engineError,setEngineError]=useState<{task:string;label:string;message:string;code?:string;input:any}|null>(null);
+  const [preflightDialog,setPreflightDialog]=useState<{title:string;items:any[]}|null>(null);
+  const [journeyDialog,setJourneyDialog]=useState(false);
+  const abortRef=useRef<AbortController|null>(null);
   const [sub,setSub]=useState<Record<string,string>>({prospecting:'approach',campaigns:'planning',performance:'overview',learning:'decisions'});
   const [ai,setAI]=useState<AIConfig>({apiKey:'',model:'gpt-5.6-terra',remember:false,connected:false});
   const [globalSettings,setGlobalSettings]=useState<any>({agencyName:'Nexus Digital',agencyTagline:'Marketing digital para engenheiros',agencyColor:'#002e6c',agencyEmail:'',agencyWhatsapp:'',managerName:'Nexus Digital',managerSpecialty:'Gestão de tráfego e estratégia digital',region:'',experience:'',managerClients:'',managerVacancies:'',proposalMonthly:1800,proposalSetup:600});
@@ -118,14 +104,24 @@ export default function Home(){
     if(v==='projects')setProjectOpen(false);else if(v!=='settings')setProjectOpen(true);
     setView(v);setMobileMenu(false);if(tab)setSub(s=>({...s,[v]:tab}));window.scrollTo({top:0,behavior:'smooth'});
   };
-  const openProject=(id:string)=>{const proj=projects.find(x=>x.id===id);if(!proj)return;const [v,t]=nextRoute(proj);setPid(id);setProjectOpen(true);setView(v);if(t)setSub(s=>({...s,[v]:t}));setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'});};
+  const openProject=(id:string)=>{const proj=projects.find(x=>x.id===id);if(!proj)return;const n=nextStep(proj);const [v,t]:[View,string?]=n.key==='done'?['performance','overview']:[n.view as View,n.sub];setPid(id);setProjectOpen(true);setView(v);if(t)setSub(s=>({...s,[v]:t}));setMobileMenu(false);window.scrollTo({top:0,behavior:'smooth'});};
   const createProject=(data:any)=>{const n=projectFactory(data.name);Object.assign(n,data,{commercialStage:'prospecting',status:'Prospecção'});setProjects(prev=>[...prev,n]);setPid(n.id);setProjectDialog(false);setProjectOpen(true);setView('brand');setSub(s=>({...s,brand:'brief'}));setToast('Projeto criado. Comece pelo briefing.');window.scrollTo({top:0,behavior:'smooth'});};
   const saveAIKey=(cfg:AIConfig)=>{localStorage.removeItem(LOCAL_KEY);sessionStorage.removeItem(SESSION_KEY);if(cfg.apiKey){if(cfg.remember)localStorage.setItem(LOCAL_KEY,cfg.apiKey);else sessionStorage.setItem(SESSION_KEY,cfg.apiKey)}setAI(cfg)};
   const testAI=async(cfg=ai)=>{if(!cfg.apiKey){setToast('Informe a chave da OpenAI.');return false}setBusy({task:'health',label:'Testando conexão com OpenAI'});try{const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:cfg.apiKey,model:cfg.model,task:'health',project:p,reasoning:'low'})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'Falha de conexão');const next={...cfg,connected:true,lastTest:new Date().toISOString()};saveAIKey(next);setToast('OpenAI conectada com sucesso.');return true}catch(e:any){setAI(x=>({...x,connected:false}));setToast(e.message||'Não foi possível conectar.');return false}finally{setBusy(null)}};
 
-  const callAI=async(task:string,project:any,input:any={})=>{if(!ai.apiKey)throw new Error('Conecte sua chave da OpenAI em Configurações.');const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:ai.apiKey,model:ai.model,task,project,input:task==='marketingPlan'?{...input,mediaAllocation:calcBudget(project.budget?.amount,project.budget?.demand,project.budget?.level,project.budget?.gbpPct,project.budget?.googleOverride)}:input,reasoning:task==='searchTerms'?'low':'medium'})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||'Falha ao executar motor');return j};
-  const applyResult=(d:any,task:string,data:any)=>{
-    d.generations=[{id:uid('gen'),task,at:new Date().toISOString(),model:ai.model},...(d.generations||[])].slice(0,50);
+  const callAI=async(task:string,project:any,input:any={},signal?:AbortSignal)=>{
+    if(!ai.apiKey)throw new Error('Conecte sua chave da OpenAI em Configurações.');
+    let r:Response;
+    try{r=await fetch('/api/ai',{method:'POST',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:ai.apiKey,model:ai.model,task,project,input:task==='marketingPlan'?{...input,mediaAllocation:calcBudget(project.budget?.amount,project.budget?.demand,project.budget?.level,project.budget?.gbpPct,project.budget?.googleOverride)}:input,reasoning:task==='searchTerms'?'low':'medium'})})}
+    catch{throw Object.assign(new Error(signal?.aborted?'Geração cancelada.':'Não consegui falar com o servidor do Nexus. Confira a conexão e tente novamente.'),{code:signal?.aborted?'cancelled':'network'})}
+    const j=await r.json().catch(()=>null);
+    if(!j)throw Object.assign(new Error(r.status===504?'A geração passou do tempo limite do servidor. Tente novamente ou use o modelo Luna.':'O servidor do Nexus não respondeu corretamente. Tente novamente.'),{code:'server'});
+    if(!r.ok||!j.ok)throw Object.assign(new Error(j.error||'Falha ao executar motor'),{usage:j.usage||null,code:j.code});
+    return j;
+  };
+  const applyResult=(d:any,task:string,data:any,usage?:any)=>{
+    d.generations=[{id:uid('gen'),task,at:new Date().toISOString(),model:ai.model,usage:usage||null},...(d.generations||[])].slice(0,50);
+    if(usage)addUsage(d,task,usage);
     if(task==='persona'){if(d.persona)d.personaHistory=[{data:d.persona,savedAt:new Date().toISOString()},...(d.personaHistory||[])].slice(0,3);d.persona=data;markArtifact(d,'persona')}
     if(task==='deepDive'){d.persona=d.persona||{};d.persona.exploracao=data}
     if(task==='content'){if(d.content)d.contentHistory=[{data:d.content,savedAt:new Date().toISOString()},...(d.contentHistory||[])].slice(0,3);d.content={items:Array.isArray(data)?data:(data.items||[]),generatedAt:new Date().toISOString()};markArtifact(d,'content')}
@@ -138,21 +134,48 @@ export default function Home(){
     if(task==='searchTerms'){d.searchTermClassifications=data}
     if(task==='optimization'){d.optimization=data;markArtifact(d,'optimization')}
   };
+  const gotoItem=(i:any)=>{setPreflightDialog(null);setJourneyDialog(false);navigate(i.view,i.sub)};
   const runEngine=async(task:string,input:any={},success?:string)=>{
     if(!ai.apiKey){navigate('settings');setToast('Conecte sua chave da OpenAI para ativar este motor.');return}
-    const x=p.aiInputs||{};
-    if(['persona','deepDive','content','metaAds','googleKeywords','googleAds'].includes(task)&&lifecycle(p)!=='won'){navigate('prospecting','proposal');setToast('Conclua o fechamento antes de iniciar a gestão de marketing.');return}
-    if(task==='marketingPlan'&&!p.approach){navigate('prospecting','approach');setToast('Gere a abordagem antes do plano de marketing.');return}
-    if(task==='proposal'&&!p.marketingPlan){navigate('plan');setToast('Gere o plano de marketing antes da proposta.');return}
-    if(task==='persona'&&!p.niche?.trim()){navigate('brand','brief');setToast('Informe o nicho/público antes de gerar a persona.');return}
-    if(task==='content'&&(!x.creatorName?.trim()||!p.niche?.trim()||!p.persona)){navigate('content');setToast('Complete responsável, nicho e persona antes de gerar o RETINA.');return}
-    if(task==='metaAds'&&(!p.persona||!(x.adOffer||p.offers||p.services||p.products)?.trim()||!(x.adDestination||p.contactDestination)?.trim()||!x.conversionAction?.trim())){navigate('ads','meta');setToast('Complete oferta, destino, ação desejada e persona antes de gerar Meta Ads.');return}
-    if(task==='googleKeywords'&&(!p.persona||!(x.adOffer||p.services||p.products)?.trim()||!x.conversionAction?.trim()||!p.location?.trim())){navigate('ads','google');setToast('Complete marca/oferta, ação, localização e persona antes de gerar Google Ads.');return}
-    if(task==='approach'&&(!input.manager?.managerName?.trim()||!p.name?.trim()||!(p.specialty||p.services||p.products)?.trim())){setToast('Para a prospecção, informe seu nome e mantenha os dados básicos do prospect preenchidos.');return}
-    setBusy({task,label:ENGINE_LABELS[task]||'Motor de IA'});
-    try{const snap=clone(p);const j=await callAI(task,snap,input);if(task==='proposal'){j.data.investment={setup:BRL.format(Number(input.setup)||0),monthly:BRL.format(Number(input.monthly)||0),media:String(input.media||'')}}update(d=>{if(task==='proposal')d.proposalInputs={setup:Number(input.setup)||0,monthly:Number(input.monthly)||0,media:String(input.media||'')};applyResult(d,task,j.data)},success||`${ENGINE_LABELS[task]||'Motor'} concluído`);setAI(x=>({...x,connected:true}))}catch(e:any){setToast(e.message||'Falha no motor de IA')}finally{setBusy(null)}
+    const gate=preflight(task,p,input);
+    if(!gate.ok){setPreflightDialog({title:ENGINE_LABELS[task]||'Motor de IA',items:gate.items});return}
+    setEngineError(null);
+    const ctl=new AbortController();abortRef.current=ctl;
+    setBusy({task,label:ENGINE_LABELS[task]||'Motor de IA',cancellable:true});
+    try{const snap=clone(p);const j=await callAI(task,snap,input,ctl.signal);if(task==='proposal'){j.data.investment={setup:BRL.format(Number(input.setup)||0),monthly:BRL.format(Number(input.monthly)||0),media:String(input.media||'')}}update(d=>{if(task==='proposal')d.proposalInputs={setup:Number(input.setup)||0,monthly:Number(input.monthly)||0,media:String(input.media||'')};applyResult(d,task,j.data,j.usage)},success||`${ENGINE_LABELS[task]||'Motor'} concluído`);setAI(x=>({...x,connected:true}))}
+    catch(e:any){
+      if(e.usage)update(d=>{addUsage(d,task,e.usage,{failed:true})});
+      if(e.code==='cancelled')setToast('Geração cancelada.');
+      else setEngineError({task,label:ENGINE_LABELS[task]||'Motor de IA',message:e.message||'Falha no motor de IA.',code:e.code,input});
+    }finally{setBusy(null);abortRef.current=null}
   };
-  const runEssential=async()=>{const x=p.aiInputs||{};if(!p.specialty?.trim()||!p.niche?.trim()||!x.creatorName?.trim()||!(x.adOffer||p.services||p.products)?.trim()||!(x.adDestination||p.contactDestination)?.trim()||!x.conversionAction?.trim()||!p.location?.trim()){navigate('brand','brief');setToast('Complete os dados compartilhados do projeto antes de executar a jornada IA completa.');return}if(!ai.apiKey){navigate('settings');setToast('Conecte sua chave da OpenAI antes de executar a jornada.');return}if(!confirm('Executar Persona → RETINA → Meta Ads → palavras-chave Google? Isso fará 4 chamadas à API e substituirá as versões atuais, preservando histórico.'))return;let draft=clone(p);const tasks=['persona','content','metaAds','googleKeywords'];try{for(let i=0;i<tasks.length;i++){const t=tasks[i];setBusy({task:t,label:'Jornada IA completa',step:`${i+1}/4 · ${ENGINE_LABELS[t]}`});const j=await callAI(t,draft,{});applyResult(draft,t,j.data);draft.history=draft.history||[];draft.history.unshift({at:new Date().toISOString(),text:`${ENGINE_LABELS[t]} gerado pela jornada IA`});setProjects(prev=>prev.map(x=>x.id===pid?clone(draft):x))}setToast('Jornada essencial concluída.')}catch(e:any){setToast(`Jornada interrompida: ${e.message}`)}finally{setBusy(null)}};
+  const executeJourney=async(resume:boolean)=>{
+    setJourneyDialog(false);
+    if(!ai.apiKey){navigate('settings');setToast('Conecte sua chave da OpenAI antes de executar a jornada.');return}
+    const gate=preflightJourney(p);
+    if(!gate.ok){setPreflightDialog({title:'Jornada IA essencial',items:gate.items});return}
+    setEngineError(null);
+    const draft=clone(p);
+    let run=resume&&journeyResumePoint(draft.journeyRun)?{...draft.journeyRun,status:'running',failedTask:null,error:null}:newJourneyRun();
+    const ctl=new AbortController();abortRef.current=ctl;
+    const save=()=>{draft.journeyRun=run;draft.updatedAt=new Date().toISOString();setProjects(prev=>prev.map(x=>x.id===pid?clone(draft):x))};
+    save();
+    try{
+      for(const t of run.tasks){
+        if(run.done.includes(t))continue;
+        setBusy({task:t,label:'Jornada IA essencial',step:`${run.tasks.indexOf(t)+1}/${run.tasks.length} · ${ENGINE_LABELS[t]}`,cancellable:true});
+        try{const j=await callAI(t,draft,{},ctl.signal);applyResult(draft,t,j.data,j.usage)}
+        catch(e:any){if(e.usage)addUsage(draft,t,e.usage,{failed:true});run={...run,status:e.code==='cancelled'?'cancelled':'failed',failedTask:t,error:e.message};save();throw e}
+        run={...run,done:[...run.done,t]};
+        draft.history=[{at:new Date().toISOString(),text:`${ENGINE_LABELS[t]} gerado pela jornada IA`},...(draft.history||[])].slice(0,100);
+        save();
+      }
+      run={...run,status:'done'};save();setAI(x=>({...x,connected:true}));setToast('Jornada IA concluída. Revise cada resultado.');
+    }catch(e:any){
+      if(e.code==='cancelled')setToast('Jornada cancelada. Você pode retomar de onde parou.');
+      else setEngineError({task:'journey',label:'Jornada IA essencial',message:e.message||'Falha na jornada.',code:e.code,input:null});
+    }finally{setBusy(null);abortRef.current=null}
+  };
 
   if(!ready||!p)return <div className="splash"><Image src="/nexus-logo.svg" alt="Nexus" width={68} height={68}/><div><b>Nexus Marketing IA</b><span>Organizando seu projeto...</span></div></div>;
   const health=projectHealth(p);
@@ -194,6 +217,7 @@ export default function Home(){
 
       <div className="page">
         {!ai.apiKey&&view!=='settings'&&view!=='projects'&&<div className="apiBanner"><div><b>Ative os motores de IA</b><span>Conecte a OpenAI quando quiser gerar os materiais do projeto.</span></div><button onClick={()=>navigate('settings')}>Conectar OpenAI</button></div>}
+        {engineError&&<EngineErrorBanner error={engineError} onSettings={()=>{setEngineError(null);navigate('settings')}} onDismiss={()=>setEngineError(null)} onRetry={()=>{const e=engineError;setEngineError(null);if(e.task==='journey')setJourneyDialog(true);else runEngine(e.task,e.input)}}/>}
         {inProject&&<ProjectFlow p={p} view={view} sub={sub} go={navigate}/>}
         {view==='projects'&&<Projects projects={projects} open={openProject} create={()=>setProjectDialog(true)}/>}
         {view==='brand'&&(stage==='won'?<><Tabs items={[["brief","Empresa"],["persona","Persona"]]} value={sub.brand||'persona'} onChange={(t:string)=>setSub(x=>({...x,brand:t}))}/>{(sub.brand||'persona')==='persona'?<PersonaWorkspace key={pid} p={p} update={update} run={runEngine} onContinue={()=>navigate('content')}/>:<BrandBrief p={p} update={update} onContinue={()=>navigate('brand','persona')}/>}</>:<BrandBrief p={p} update={update} onContinue={()=>navigate('prospecting','approach')}/>)}
@@ -202,41 +226,31 @@ export default function Home(){
         {view==='calendar'&&<CalendarWorkspace key={pid} p={p} update={update}/>}
         {view==='readiness'&&<Readiness p={p} update={update}/>}
         {view==='ads'&&<><Tabs items={[["meta","Meta · despertar interesse"],["google","Google · quem já procura"]]} value={sub.ads||'meta'} onChange={(t:string)=>setSub(x=>({...x,ads:t}))}/>{sub.ads==='google'?<GoogleWorkspace key={pid} p={p} update={update} run={runEngine}/>:<MetaAds p={p} update={update} run={runEngine}/>} {adsReady(p)&&<div className="flowFooter"><div><b>Anúncios prontos para testar</b><span>Agora defina quanto investir em cada canal.</span></div><button className="primary" onClick={()=>navigate('campaigns','planning')}>Continuar para investimento →</button></div>}</>}
-        {view==='home'&&<Dashboard p={p} health={health} go={navigate} runEssential={runEssential} ai={ai}/>}
-        {view==='journey'&&<Journey p={p} health={health} go={navigate} run={runEngine} runEssential={runEssential} ai={ai}/>}
+        {view==='home'&&<Dashboard p={p} health={health} go={navigate}/>}
+        {view==='journey'&&<Journey p={p} go={navigate} ai={ai} onJourney={()=>setJourneyDialog(true)}/>}
         {view==='prospecting'&&<Prospecting key={pid} p={p} tab={sub.prospecting} setTab={(v:string)=>setSub(s=>({...s,prospecting:v}))} run={runEngine} settings={globalSettings} update={update} go={navigate}/>}
         {view==='campaigns'&&<MediaPlanning p={p} update={update} onContinue={()=>navigate('performance','overview')}/>} 
         {view==='performance'&&<Performance key={pid} p={p} tab={sub.performance} setTab={(v:string)=>setSub(s=>({...s,performance:v}))} run={runEngine} update={update}/>}
         {view==='learning'&&<Learning key={pid} p={p} tab={sub.learning} setTab={(v:string)=>setSub(s=>({...s,learning:v}))} update={update}/>}
-        {view==='settings'&&<Settings ai={ai} setAI={saveAIKey} testAI={testAI} settings={globalSettings} setSettings={setGlobalSettings} busy={busy}/>}
+        {view==='settings'&&<Settings ai={ai} setAI={saveAIKey} testAI={testAI} settings={globalSettings} setSettings={setGlobalSettings} busy={busy} projects={projects}/>}
       </div>
     </main>
     {projectDialog&&<ProjectDialog save={createProject} close={()=>setProjectDialog(false)}/>}
     {toast&&<div role="status" className="toast">{toast}</div>}
-    {busy&&<div className="busyOverlay"><div className="busyCard"><div className="orb">✦</div><small>NEXUS AI ENGINE</small><h3>{busy.label}</h3><p>{busy.step||'Processando contexto, estratégia e estrutura de saída...'}</p><div className="loader"><i/></div><span>Você pode aguardar nesta tela. O resultado será salvo no projeto.</span></div></div>}
+    {busy&&<div className="busyOverlay"><div className="busyCard"><div className="orb">✦</div><small>NEXUS AI ENGINE</small><h3>{busy.label}</h3><p>{busy.step||'Processando contexto, estratégia e estrutura de saída...'}</p><div className="loader"><i/></div><span>Você pode aguardar nesta tela. O resultado será salvo no projeto.</span>{busy.cancellable&&<button className="secondary busyCancel" onClick={()=>abortRef.current?.abort()}>Cancelar geração</button>}</div></div>}
+    {preflightDialog&&<PreflightDialog title={preflightDialog.title} items={preflightDialog.items} onGo={gotoItem} onClose={()=>setPreflightDialog(null)}/>}
+    {journeyDialog&&<JourneyDialog p={p} gate={preflightJourney(p)} resumeTask={journeyResumePoint(p.journeyRun)} onRun={executeJourney} onGo={gotoItem} onClose={()=>setJourneyDialog(false)}/>}
   </div>;
 }
 
 function downloadJSON(p:any){const blob=new Blob([JSON.stringify(p,null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=`nexus-${p.name.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.json`;a.click();URL.revokeObjectURL(u)}
 function ProjectFlow({p,view,sub,go}:any){
- const won=lifecycle(p)==='won';
- const steps=won?[
-  ['Persona',!!p.persona,'brand','persona'],
-  ['RETINA',!!p.content?.items?.length,'content',''],
-  ['Anúncios',adsReady(p),'ads','meta'],
-  ['Investimento',!!p.mediaPlanConfirmed,'campaigns','planning'],
-  ['Resultados',!!p.performanceRows?.length,'performance','overview']
- ]:[
-  ['Briefing',briefReady(p),'brand','brief'],
-  ['Abordagem',!!p.approach,'prospecting','approach'],
-  ['Plano',!!p.marketingPlan,'plan',''],
-  ['Proposta',!!p.proposal,'prospecting','proposal'],
-  ['Decisão',['won','declined'].includes(lifecycle(p)),'prospecting','proposal']
- ];
+ const journey=journeySteps(p);const won=journey.phase==='gestao';
+ const steps=journey.steps.map((s:any)=>[s.label,s.done,s.view,s.sub]);
  return <div className="flowRail"><div className="flowRailPhase">{won?'GESTÃO':'PROSPECÇÃO'}</div>{steps.map((s:any,i:number)=>{const unlocked=i===0||steps.slice(0,i).every((x:any)=>x[1]);const active=view===s[2]&&(!s[3]||sub[s[2]]===s[3]);return <button key={s[0]} disabled={!unlocked} className={(s[1]?'done ':'')+(active?'active':'')} onClick={()=>go(s[2],s[3]||undefined)}><span>{s[1]?'✓':i+1}</span><b>{s[0]}</b></button>})}</div>;
 }
 
-function nextAction(p:any){if(!briefReady(p))return ['Revisar empresa','Complete a base do cliente.','brand','brief'];if(!p.persona)return ['Criar Persona','Mapeie dores, objeções e níveis de consciência.','brand','persona'];if(!p.content?.items?.length)return ['Criar RETINA','Transforme a persona em conteúdos prontos.','content'];if(!adsReady(p))return ['Criar anúncios','Escolha Meta ou Google conforme a estratégia.','ads','meta'];if(!p.mediaPlanConfirmed)return ['Definir investimento','A matriz distribui a verba entre Google, Meta e GBP.','campaigns','planning'];if(!p.performanceRows?.length)return ['Importar resultados','Adicione dados reais para acompanhar a performance.','performance','sources'];return ['Diagnosticar performance','Cruze dados, hipóteses e próximos testes.','performance','diagnostics']}
+function nextAction(p:any){const n=nextStep(p);return [n.label,n.text,n.view,n.sub]}
 
 
 function Dashboard({p,health,go}:any){const b=calcBudget(p.budget.amount,p.budget.demand,p.budget.level,p.budget.gbpPct,p.budget.googleOverride),m=metrics(p.performanceRows||[]),next=nextAction(p);return <>
@@ -245,28 +259,18 @@ function Dashboard({p,health,go}:any){const b=calcBudget(p.budget.amount,p.budge
   <div className="grid2"><Card eyebrow="FLUXO" title="Onde o projeto está"><OperationMap p={p} go={go}/></Card><Card eyebrow="INVESTIMENTO" title="Distribuição atual"><BudgetSplit p={p}/></Card></div>
 </>}
 function Quick({title,text,icon,onClick}:any){return <button className="quick" onClick={onClick}><i>{icon}</i><div><b>{title}</b><span>{text}</span></div><em>›</em></button>}
-function OperationMap({p,go}:any){const items=[['Empresa',briefReady(p),'brand','brief'],['Persona',!!p.persona,'brand','persona'],['RETINA',!!p.content?.items?.length,'content',''],['Anúncios',adsReady(p),'ads','meta'],['Investimento',!!p.mediaPlanConfirmed,'campaigns','planning'],['Resultados',!!p.performanceRows?.length,'performance','sources']];return <div className="operationMap">{items.map((x:any,i:number)=><button key={x[0]} onClick={()=>go(x[2],x[3]||undefined)} className={x[1]?'done':''}><span>{x[1]?'✓':i+1}</span><b>{x[0]}</b><small>{x[1]?'concluído':'próxima ação'}</small></button>)}</div>}
+function OperationMap({p,go}:any){const items=[['Empresa',briefReady(p),'brand','brief'],...journeySteps(p).steps.map((s:any)=>[s.label,s.done,s.view,s.key==='results'?'sources':s.sub])];return <div className="operationMap">{items.map((x:any,i:number)=><button key={x[0]} onClick={()=>go(x[2],x[3]||undefined)} className={x[1]?'done':''}><span>{x[1]?'✓':i+1}</span><b>{x[0]}</b><small>{x[1]?'concluído':'próxima ação'}</small></button>)}</div>}
 function BudgetSplit({p}:any){const b=calcBudget(p.budget.amount,p.budget.demand,p.budget.level,p.budget.gbpPct,p.budget.googleOverride);return <div className="budgetSplit"><div className="splitRow"><span>Google</span><b>{b.googlePct}% · {BRL.format(b.google)}</b></div><div className="bar"><i style={{width:b.googlePct+'%'}}/></div><div className="splitRow"><span>Meta</span><b>{b.metaPct}% · {BRL.format(b.meta)}</b></div><div className="bar meta"><i style={{width:b.metaPct+'%'}}/></div><div className="budgetMini"><div><small>GBP</small><b>{BRL.format(b.gbp)}</b></div><div><small>Google Ads</small><b>{BRL.format(b.ads)}</b></div></div><div className="tagRow">{b.campaigns.map((x:string)=><span key={x}>{x}</span>)}</div></div>}
 
 
-function Journey({p,go}:any){
- const won=lifecycle(p)==='won';
- const steps=won?[
-  {title:'Persona',done:!!p.persona,action:()=>go('brand','persona')},
-  {title:'Conteúdo RETINA',done:!!p.content?.items?.length,action:()=>go('content')},
-  {title:'Anúncios',done:adsReady(p),action:()=>go('ads','meta')},
-  {title:'Investimento',done:!!p.mediaPlanConfirmed,action:()=>go('campaigns','planning')},
-  {title:'Resultados',done:!!p.performanceRows?.length,action:()=>go('performance','overview')}
- ]:[
-  {title:'Briefing',done:briefReady(p),action:()=>go('brand','brief')},
-  {title:'Abordagem',done:!!p.approach,action:()=>go('prospecting','approach')},
-  {title:'Plano de marketing',done:!!p.marketingPlan,action:()=>go('plan')},
-  {title:'Proposta',done:!!p.proposal,action:()=>go('prospecting','proposal')},
-  {title:'Fechado ou declinado',done:['won','declined'].includes(lifecycle(p)),action:()=>go('prospecting','proposal')}
- ];
- let current=steps.findIndex((x:any)=>!x.done);if(current<0)current=steps.length-1;const target=steps[current];
+function Journey({p,go,ai,onJourney}:any){
+ const j=journeySteps(p);const won=j.phase==='gestao';const current=j.current;
+ const steps=j.steps.map((s:any)=>({...s,action:()=>go(s.view,s.sub||undefined)}));const target=steps[current];
+ const resume=journeyResumePoint(p.journeyRun);
  return <><section className="workflowHero"><div><small>{won?'CLIENTE ATIVO':'PROSPECÇÃO'}</small><h2>{won?'Da estratégia para a execução.':'Do primeiro briefing ao fechamento.'}</h2><p>{won?'Persona, conteúdo, anúncios, investimento e resultado.':'O Nexus abre somente a etapa que faz sentido agora.'}</p></div><button className="primary" onClick={target.action}>{'Continuar: '+target.title} →</button></section>
- <div className="journey simpleJourney">{steps.map((s:any,i:number)=>{const unlocked=i===0||steps.slice(0,i).every((x:any)=>x.done);return <button className={'journeyStep '+(s.done?'done ':'')+(i===current?'current':'')} disabled={!unlocked} key={s.title} onClick={s.action}><div className="stepNo">{s.done?'✓':i+1}</div><div className="stepBody"><div className="stepTitle"><div><b>{s.title}</b><span>{s.done?'Concluído':i===current?'Próxima etapa':'Aguardando'}</span></div></div><em>›</em></div></button>})}</div></>;
+ <div className="journey simpleJourney">{steps.map((s:any,i:number)=>{const unlocked=i===0||steps.slice(0,i).every((x:any)=>x.done);return <button className={'journeyStep '+(s.done?'done ':'')+(i===current?'current':'')} disabled={!unlocked} key={s.title} onClick={s.action}><div className="stepNo">{s.done?'✓':i+1}</div><div className="stepBody"><div className="stepTitle"><div><b>{s.title}</b><span>{s.done?'Concluído':i===current?'Próxima etapa':'Aguardando'}</span></div></div><em>›</em></div></button>})}</div>
+ {won&&<section className="card journeyCard"><div><div className="eyebrow">JORNADA IA ESSENCIAL · OPCIONAL</div><h3>Gerar Persona, RETINA, Meta Ads e palavras-chave em sequência</h3><p>São 4 chamadas à OpenAI. O Nexus para no primeiro erro, você pode cancelar a qualquer momento e depois revisa cada resultado. Se preferir, siga etapa por etapa pelo fluxo acima.</p>{resume&&<span className="tag">Interrompida: dá para retomar de {ENGINE_LABELS[resume]}</span>}</div><button className="primary" disabled={!ai.apiKey} title={ai.apiKey?'':'Conecte a OpenAI em Configurações'} onClick={onJourney}>✦ {resume?'Retomar ou recomeçar':'Executar jornada'}</button></section>}
+ <UsageCard summary={usageSummary(p)}/></>;
 }
 
 function Prospecting({p,tab,setTab,run,settings,update,go}:any){
@@ -338,12 +342,13 @@ function Audit({p}:any){
 function History({p}:any){return <div className="grid2"><Card eyebrow="ATIVIDADE" title="Histórico do projeto">{(p.history||[]).map((h:any,i:number)=><div className="historyItem" key={i}><span>{new Date(h.at).toLocaleString('pt-BR')}</span><b>{h.text}</b></div>)}</Card><Card eyebrow="GERAÇÕES" title="Motores executados">{!p.generations?.length?<Empty title="Sem gerações nesta versão" text="As novas execuções por OpenAI aparecerão aqui com data e modelo."/>:p.generations.map((g:any)=><div className="historyItem" key={g.id}><span>{new Date(g.at).toLocaleString('pt-BR')}</span><b>{ENGINE_LABELS[g.task]||g.task}</b><small>{g.model}</small></div>)}</Card></div>}
 
 
-function Settings({ai,setAI,testAI,settings,setSettings,busy}:any){
+function Settings({ai,setAI,testAI,settings,setSettings,busy,projects}:any){
  const [draft,setDraft]=useState(ai);useEffect(()=>setDraft(ai),[ai]);const save=()=>{setAI({...draft,connected:false})};
  return <><div className="sectionIntro"><div><div className="eyebrow">CONFIGURAÇÕES</div><h2>Configure uma vez e reutilize em todos os projetos.</h2></div></div><div className="grid2 settingsGrid">
  <Card eyebrow="IDENTIDADE NEXUS" title="Usada nas propostas"><Field label="Nome da agência"><input value={settings.agencyName} onChange={e=>setSettings({...settings,agencyName:e.target.value})}/></Field><Field label="Posicionamento"><input value={settings.agencyTagline} onChange={e=>setSettings({...settings,agencyTagline:e.target.value})}/></Field><div className="form2"><Field label="Cor"><input type="color" value={settings.agencyColor||'#002e6c'} onChange={e=>setSettings({...settings,agencyColor:e.target.value})}/></Field><Field label="Responsável"><input value={settings.managerName} onChange={e=>setSettings({...settings,managerName:e.target.value})}/></Field></div><div className="form2"><Field label="E-mail"><input value={settings.agencyEmail||''} onChange={e=>setSettings({...settings,agencyEmail:e.target.value})}/></Field><Field label="WhatsApp"><input value={settings.agencyWhatsapp||''} onChange={e=>setSettings({...settings,agencyWhatsapp:e.target.value})}/></Field></div></Card>
  <Card eyebrow="COMERCIAL" title="Padrões da Nexus"><Field label="Especialidade"><input value={settings.managerSpecialty} onChange={e=>setSettings({...settings,managerSpecialty:e.target.value})}/></Field><div className="form2"><Field label="Região"><input value={settings.region} onChange={e=>setSettings({...settings,region:e.target.value})}/></Field><Field label="Experiência"><select value={settings.experience} onChange={e=>setSettings({...settings,experience:e.target.value})}><option value="">Selecione</option><option>Zero (nenhum cliente)</option><option>Iniciante (1 a 2 clientes)</option><option>Intermediário (3 a 7 clientes)</option><option>Experiente (8 ou mais clientes)</option></select></Field></div><div className="form2"><Field label="Clientes atuais"><input type="number" min="0" value={settings.managerClients??''} onChange={e=>setSettings({...settings,managerClients:e.target.value})}/></Field><Field label="Vagas disponíveis"><input type="number" min="0" value={settings.managerVacancies??''} onChange={e=>setSettings({...settings,managerVacancies:e.target.value})}/></Field></div><div className="form2"><Field label="Setup padrão"><input type="number" value={settings.proposalSetup} onChange={e=>setSettings({...settings,proposalSetup:Number(e.target.value)})}/></Field><Field label="Mensalidade padrão"><input type="number" value={settings.proposalMonthly} onChange={e=>setSettings({...settings,proposalMonthly:Number(e.target.value)})}/></Field></div></Card>
  <Card eyebrow="OPENAI API" title="Motores de inteligência"><div className="connectionState"><div className={ai.connected?'on':ai.apiKey?'saved':''}>✦</div><div><b>{ai.connected?'Conexão validada':ai.apiKey?'Chave configurada':'Ainda não conectada'}</b><span>{ai.connected?'Modelo atual: '+ai.model:'Insira sua chave para ativar os motores.'}</span></div></div><Field label="Chave da OpenAI"><input type="password" autoComplete="off" value={draft.apiKey} onChange={e=>setDraft({...draft,apiKey:e.target.value,connected:false})} placeholder="sk-..."/></Field><Field label="Modelo"><select value={draft.model} onChange={e=>setDraft({...draft,model:e.target.value,connected:false})}>{MODEL_OPTIONS.map(x=><option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></Field><label className="remember"><input type="checkbox" checked={draft.remember} onChange={e=>setDraft({...draft,remember:e.target.checked})}/><span><b>Lembrar chave neste navegador</b><small>Desmarcado = some ao fechar a sessão.</small></span></label><div className="buttonRow"><button className="secondary" onClick={save}>Salvar</button><button className="primary" disabled={!draft.apiKey||!!busy} onClick={async()=>{setAI({...draft,connected:false});await testAI({...draft,connected:false})}}>Testar conexão</button>{ai.apiKey&&<button className="dangerText" onClick={()=>{const empty={...ai,apiKey:'',connected:false,remember:false};setDraft(empty);setAI(empty)}}>Remover chave</button>}</div></Card>
+ <UsageCard summary={sumUsage(projects)} title="Uso em todos os projetos" scope="em qualquer projeto"/>
  </div></>;
 }
 
