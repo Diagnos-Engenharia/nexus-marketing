@@ -249,3 +249,4 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 /* Títulos de cartão com etiqueta longa quebram em vez de alargar a página */
 .cardHead{flex-wrap:wrap}.cardHead .pill{white-space:normal;max-width:100%}
+.engineError details{margin-top:6px;font-size:14px;color:var(--text)}.engineError summary{cursor:pointer;color:var(--red);font-weight:600}.engineError details code{display:block;margin-top:6px;padding:8px 10px;background:#fff;border:1px solid #f0c3c9;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}

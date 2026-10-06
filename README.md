@@ -26,6 +26,7 @@ As datas do calendário organizam o planejamento; não publicam automaticamente 
 ## Uso e privacidade da IA
 
 - Toda chamada à OpenAI vai com `store: false`: a resposta não fica armazenada na conta da API para consulta posterior (a retenção de segurança da OpenAI, quando houver, segue a política dela). A chave continua só no navegador e passa pelo servidor do Nexus apenas durante a chamada.
+- As gerações que devolvem objeto pedem à OpenAI o modo JSON (se o modelo não aceitar, repete sem ele; um erro 400 não gasta tokens). Se mesmo assim a resposta vier fora do formato, o banner mostra **Ver o que a IA respondeu** (os primeiros caracteres), nada é salvo e a tentativa conta no uso.
 - Cada geração tem limite de 55 s e pode ser cancelada pelo botão **Cancelar geração**. Erros do motor ficam num banner fixo, com **Tentar novamente** ou **Abrir configurações** (chave, acesso, saldo ou modelo).
 - Textos livres do projeto (briefing, observações, termos de pesquisa, CSV) vão ao modelo dentro de um bloco marcado como não confiável: o modelo os usa como dado e não segue instruções escritas neles.
 - O uso é medido em tokens pela própria OpenAI, por projeto (tela **Fluxo do projeto**) e no total (**Configurações**). Gerações reprovadas na validação também contam. Não é valor em R$.

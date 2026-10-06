@@ -66,7 +66,7 @@ export default function Home(){
   const [projects,setProjects]=useState<any[]>([]); const [pid,setPid]=useState(''); const [ready,setReady]=useState(false);
   const [projectDialog,setProjectDialog]=useState(false); const [mobileMenu,setMobileMenu]=useState(false);
   const [toast,setToast]=useState(''); const [busy,setBusy]=useState<{task:string;label:string;step?:string;cancellable?:boolean}|null>(null);
-  const [engineError,setEngineError]=useState<{task:string;label:string;message:string;code?:string;input:any}|null>(null);
+  const [engineError,setEngineError]=useState<{task:string;label:string;message:string;code?:string;detail?:string;input:any}|null>(null);
   const [preflightDialog,setPreflightDialog]=useState<{title:string;items:any[]}|null>(null);
   const [journeyDialog,setJourneyDialog]=useState(false);
   const abortRef=useRef<AbortController|null>(null);
@@ -119,7 +119,7 @@ export default function Home(){
     catch{throw Object.assign(new Error(signal?.aborted?'Geração cancelada.':'Não consegui falar com o servidor do Nexus. Confira a conexão e tente novamente.'),{code:signal?.aborted?'cancelled':'network'})}
     const j=await r.json().catch(()=>null);
     if(!j)throw Object.assign(new Error(r.status===504?'A geração passou do tempo limite do servidor. Tente novamente ou use o modelo Luna.':'O servidor do Nexus não respondeu corretamente. Tente novamente.'),{code:'server'});
-    if(!r.ok||!j.ok)throw Object.assign(new Error(j.error||'Falha ao executar motor'),{usage:j.usage||null,code:j.code});
+    if(!r.ok||!j.ok)throw Object.assign(new Error(j.error||'Falha ao executar motor'),{usage:j.usage||null,code:j.code,detail:j.detail});
     return j;
   };
   const applyResult=(d:any,task:string,data:any,usage?:any)=>{
@@ -151,7 +151,7 @@ export default function Home(){
     catch(e:any){
       if(e.usage)update(d=>{addUsage(d,task,e.usage,{failed:true})});
       if(e.code==='cancelled')setToast('Geração cancelada.');
-      else setEngineError({task,label:ENGINE_LABELS[task]||'Motor de IA',message:e.message||'Falha no motor de IA.',code:e.code,input});
+      else setEngineError({task,label:ENGINE_LABELS[task]||'Motor de IA',message:e.message||'Falha no motor de IA.',code:e.code,detail:e.detail,input});
     }finally{setBusy(null);abortRef.current=null}
   };
   const executeJourney=async(resume:boolean)=>{

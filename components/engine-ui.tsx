@@ -59,8 +59,8 @@ export function UsageCard({summary,title='Uso de IA neste projeto',scope}:{summa
   </section>;
 }
 
-export function EngineErrorBanner({error,onRetry,onSettings,onDismiss}:{error:{label:string;message:string;code?:string};onRetry:()=>void;onSettings:()=>void;onDismiss:()=>void}){
+export function EngineErrorBanner({error,onRetry,onSettings,onDismiss}:{error:{label:string;message:string;code?:string;detail?:string};onRetry:()=>void;onSettings:()=>void;onDismiss:()=>void}){
   const config=['auth','forbidden','quota','model'].includes(error.code||'');
-  return <div className="engineError" role="alert"><div><b>{error.label}: a geração não foi concluída</b><span>{error.message}</span></div>
+  return <div className="engineError" role="alert"><div><b>{error.label}: a geração não foi concluída</b><span>{error.message}</span>{error.code==='invalid_json'&&<span>Nada foi salvo. A tentativa conta no uso de tokens.</span>}{error.detail&&<details><summary>Ver o que a IA respondeu</summary><code>{error.detail}</code></details>}</div>
     <div className="buttonRow">{config?<button className="primary" onClick={onSettings}>Abrir configurações</button>:<button className="primary" onClick={onRetry}>Tentar novamente</button>}<button className="secondary" onClick={onDismiss}>Dispensar</button></div></div>;
 }
